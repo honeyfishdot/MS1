@@ -145,7 +145,7 @@ services:
   dashboard:
     build:
       context: .
-      dockerfile: apps/dashboard/Dockerfile
+      dockerfile: Dockerfile
     container_name: allbright-web-dashboard
     ports:
       - "5173:80"   # Primary
@@ -172,7 +172,7 @@ services:
   dashboard-backup-1:
     build:
       context: .
-      dockerfile: apps/dashboard/Dockerfile
+      dockerfile: Dockerfile
     container_name: allbright-web-dashboard-backup-1
     ports:
       - "5176:80"
@@ -186,7 +186,7 @@ services:
   dashboard-backup-2:
     build:
       context: .
-      dockerfile: apps/dashboard/Dockerfile
+      dockerfile: Dockerfile
     container_name: allbright-web-dashboard-backup-2
     ports:
       - "5177:80"

@@ -4,689 +4,587 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { 
-  WalletState, 
-  DashboardSettings, 
-  CustomWalletItem 
-} from '../types';
-import { 
-  Wallet, 
-  Plus, 
-  Pencil, 
-  Trash2, 
-  Save, 
-  X, 
-  ChevronUp, 
-  ChevronDown,
-  Check,
-  Clock,
-  Search
+import {
+  Wallet,
+  Plus,
+  Pencil,
+  Trash2,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Send,
+  Loader2,
+  ShieldCheck,
+  Eye,
+  EyeOff,
+  Zap,
 } from 'lucide-react';
+import { WalletState, DashboardSettings, CustomWalletItem } from '../types';
 
 interface WalletViewProps {
   wallet: WalletState | null;
-  settings: DashboardSettings | null;
+  settings: DashboardSettings;
   onDeposit: (amount: number, token: string) => Promise<{ success: boolean; error?: string }>;
   onWithdraw: (amount: number, token: string) => Promise<{ success: boolean; error?: string }>;
-  onTransferProfit?: () => Promise<void>;
-  transferringProfit?: boolean;
+  onTransferProfit: () => Promise<void>;
+  transferringProfit: boolean;
   isUpdating: boolean;
   themeMode: 'dark' | 'bright' | 'dusty-blue';
   convertAndFormat: (usdValue: number, minFractionDigits?: number) => string;
-  
   walletsList: CustomWalletItem[];
-  onUpdateWalletsList: (newList: CustomWalletItem[]) => void;
+  onUpdateWalletsList: (updater: (prev: CustomWalletItem[]) => CustomWalletItem[]) => void;
   onUpdateSettings: (updated: Partial<DashboardSettings>) => Promise<boolean>;
 }
 
-interface TransferHistoryItem {
-  id: string;
-  timestamp: number;
-  type: 'AUTO' | 'MANUAL';
-  amount: number;
-  token: string;
-  recipient: string;
-  txHash: string;
-  status: 'SUCCESS' | 'FAILED';
+type SortField = 'name' | 'address' | 'chain' | 'balance';
+type SortOrder = 'asc' | 'desc';
+
+const CHAIN_OPTIONS = [
+  'Ethereum Mainnet',
+  'Arbitrum Mainnet',
+  'Polygon POS',
+  'BNB Smart Chain',
+  'Optimism Mainnet',
+  'Base Mainnet',
+  'Avalanche C-Chain',
+];
+
+function shortAddress(address: string): string {
+  if (!address || address.length < 12) return address || '—';
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
-const CHAINS = ['Arbitrum Mainnet', 'Ethereum Mainnet', 'Optimism Mainnet', 'Polygon POS', 'Base', 'Avalanche'];
+export default function WalletView({
+  wallet,
+  settings,
+  onDeposit,
+  onWithdraw,
+  onTransferProfit,
+  transferringProfit,
+  isUpdating,
+  themeMode,
+  convertAndFormat,
+  walletsList,
+  onUpdateWalletsList,
+  onUpdateSettings,
+}: WalletViewProps) {
+  const [sortField, setSortField] = useState<SortField>('balance');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [showKeys, setShowKeys] = useState<boolean>(false);
+  const [revealId, setRevealId] = useState<string | null>(null);
 
-function shortenAddress(addr: string): string {
-  if (!addr || addr.length <= 10) return addr;
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-}
-
-function shortenPrivateKey(key: string): string {
-  if (!key || key.length <= 10) return key;
-  if (key === 'VAULT_MANAGED' || key === '••••••••') return key;
-  return `${key.slice(0, 6)}...${key.slice(-4)}`;
-}
-
-function simulateChainAndBalance(address: string): { chain: string; balance: number } {
-  let hash = 0;
-  for (let i = 0; i < address.length; i++) {
-    hash = ((hash << 5) - hash) + address.charCodeAt(i);
-    hash = hash & hash;
-  }
-  const chain = CHAINS[Math.abs(hash) % CHAINS.length];
-  const balance = Math.abs(hash % 50000) + 100;
-  return { chain, balance };
-}
-
-export default function WalletView(props: WalletViewProps) {
-  const {
-    wallet,
-    settings,
-    onTransferProfit,
-    transferringProfit,
-    themeMode,
-    convertAndFormat,
-    walletsList,
-    onUpdateWalletsList,
-    onUpdateSettings,
-  } = props;
-
-  const [sortBy, setSortBy] = useState<keyof CustomWalletItem>('address');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editAddress, setEditAddress] = useState('');
-  const [editPrivateKey, setEditPrivateKey] = useState('');
-  const [editChain, setEditChain] = useState('');
-  const [editBalance, setEditBalance] = useState<number>(0);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [formAddress, setFormAddress] = useState('');
-  const [formPrivateKey, setFormPrivateKey] = useState('');
-  const [formChain, setFormChain] = useState('');
-  const [formBalance, setFormBalance] = useState<number>(0);
-  const [isDetecting, setIsDetecting] = useState(false);
-  const [manualAmount, setManualAmount] = useState<string>('');
-  const [withdrawalMessage, setWithdrawalMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [formName, setFormName] = useState<string>('');
+  const [formAddress, setFormAddress] = useState<string>('');
+  const [formChain, setFormChain] = useState<string>(CHAIN_OPTIONS[0]);
+  const [formBalance, setFormBalance] = useState<string>('');
 
-  const [transferHistory, setTransferHistory] = useState<TransferHistoryItem[]>(() => {
-    const saved = localStorage.getItem('allbright_transfer_history');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { }
-    }
-    return [];
-  });
+  const [depositAmount, setDepositAmount] = useState<string>('');
+  const [depositToken, setDepositToken] = useState<string>('USDC');
+  const [withdrawAmount, setWithdrawAmount] = useState<string>('');
+  const [withdrawToken, setWithdrawToken] = useState<string>('USDC');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const getThemeClasses = () => {
+  const getThemeStyles = () => {
     switch (themeMode) {
       case 'bright':
         return {
-          card: 'bg-white border border-slate-200 rounded-2xl p-5 shadow-sm',
+          card: 'bg-white border border-slate-200 rounded-2xl p-4 shadow-sm',
           textMuted: 'text-slate-500',
-          textTitle: 'text-slate-800 font-bold',
           textWhite: 'text-slate-900',
-          accentText: 'text-teal-600',
-          tableHeaderBg: 'bg-slate-50 border-b border-slate-200 text-slate-600',
-          tableRowBorder: 'border-b border-slate-100',
-          tableRowHover: 'hover:bg-slate-50/50',
-          inputBg: 'bg-white border border-slate-200 text-slate-800 focus:border-teal-500',
-          btnPrimary: 'bg-teal-600 hover:bg-teal-700 text-white',
+          inputBg: 'bg-slate-100 border border-slate-200 text-slate-900 focus:border-teal-500',
+          tableBg: 'bg-white border border-slate-200 rounded-2xl overflow-hidden',
+          tableHeader: 'bg-slate-50 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider text-[10px]',
+          tableRow: 'border-b border-slate-100 hover:bg-slate-50/50',
           btnSecondary: 'bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700',
+          btnPrimary: 'bg-teal-600 hover:bg-teal-700 text-white',
+          badgeMuted: 'bg-slate-100 text-slate-600',
         };
       case 'dusty-blue':
         return {
-          card: 'bg-[#1e2a3d] border border-[#314363] rounded-2xl p-5 shadow-md',
-          textMuted: 'text-slate-400',
-          textTitle: 'text-sky-100 font-bold',
+          card: 'bg-[#1b283d] border border-[#2b3b54] rounded-2xl p-4',
+          textMuted: 'text-slate-300',
           textWhite: 'text-white',
-          accentText: 'text-teal-400',
-          tableHeaderBg: 'bg-[#131b27] border-b border-[#314363] text-sky-200',
-          tableRowBorder: 'border-b border-[#314363]/40',
-          tableRowHover: 'hover:bg-[#1a2537]',
-          inputBg: 'bg-[#131b27] border border-[#314363] text-slate-100 focus:border-teal-400',
-          btnPrimary: 'bg-gradient-to-r from-teal-500 to-teal-600 text-slate-950 font-bold',
+          inputBg: 'bg-[#121c2b] border border-[#2b3b54] text-white focus:border-teal-400',
+          tableBg: 'bg-[#131d2c] border border-[#2b3b54] rounded-2xl overflow-hidden',
+          tableHeader: 'bg-[#1e2e47] text-sky-200 font-bold border-b border-[#2b3b54] uppercase tracking-wider text-[10px]',
+          tableRow: 'border-b border-[#25354e]/50 hover:bg-[#1a293f]',
           btnSecondary: 'bg-[#24324a] hover:bg-[#2d3e5c] border border-[#314363] text-sky-200',
+          btnPrimary: 'bg-gradient-to-r from-teal-500 to-teal-600 text-slate-950 font-bold',
+          badgeMuted: 'bg-[#131b27] text-sky-200',
         };
       case 'dark':
       default:
         return {
-          card: 'bg-slate-900 border border-slate-800/80 rounded-2xl p-5 shadow-xl',
+          card: 'bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4',
           textMuted: 'text-slate-400',
-          textTitle: 'text-white font-bold',
           textWhite: 'text-white',
-          accentText: 'text-teal-400',
-          tableHeaderBg: 'bg-slate-950 border-b border-slate-800 text-slate-300',
-          tableRowBorder: 'border-b border-slate-800/50',
-          tableRowHover: 'hover:bg-slate-800/30',
-          inputBg: 'bg-slate-950 border border-slate-800 text-slate-100 focus:border-teal-500',
-          btnPrimary: 'bg-teal-500 hover:bg-teal-600 text-slate-950 font-extrabold',
+          inputBg: 'bg-slate-950 border border-slate-800 text-white focus:border-teal-500',
+          tableBg: 'bg-slate-950/40 border border-slate-800/80 rounded-2xl overflow-hidden',
+          tableHeader: 'bg-slate-950 text-slate-300 font-bold border-b border-slate-800/60 uppercase tracking-wider text-[10px]',
+          tableRow: 'border-b border-slate-800/30 hover:bg-slate-800/20',
           btnSecondary: 'bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-300',
+          btnPrimary: 'bg-teal-500 hover:bg-teal-600 text-slate-950 font-extrabold',
+          badgeMuted: 'bg-slate-800 text-slate-300',
         };
     }
   };
 
-  const styles = getThemeClasses();
+  const styles = getThemeStyles();
 
-  useEffect(() => {
-    if (formAddress && formAddress.startsWith('0x') && formAddress.length === 42) {
-      setIsDetecting(true);
-      const timer = setTimeout(() => {
-        const detected = simulateChainAndBalance(formAddress);
-        setFormChain(detected.chain);
-        setFormBalance(detected.balance);
-        setIsDetecting(false);
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [formAddress]);
+  const sortedWallets = [...walletsList].sort((a, b) => {
+    let comparison = 0;
+    if (sortField === 'name') comparison = a.name.localeCompare(b.name);
+    else if (sortField === 'address') comparison = a.address.localeCompare(b.address);
+    else if (sortField === 'chain') comparison = a.chain.localeCompare(b.chain);
+    else if (sortField === 'balance') comparison = a.balance - b.balance;
+    return sortOrder === 'desc' ? -comparison : comparison;
+  });
 
-  const handleSort = (column: keyof CustomWalletItem) => {
-    if (sortBy === column) {
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
-      setSortBy(column);
-      setSortOrder('asc');
+      setSortField(field);
+      setSortOrder('desc');
     }
   };
 
-  const handleAddWallet = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newWallet: CustomWalletItem = {
-      id: `w-${Date.now()}`,
-      name: 'Wallet',
-      address: shortenAddress(formAddress),
-      privateKey: shortenPrivateKey(formPrivateKey) || '••••••••',
-      chain: formChain,
-      balance: Number(formBalance) || 0,
-      isActive: true
-    };
-    onUpdateWalletsList([...walletsList, newWallet]);
+  const totalTrackedUsd = walletsList.reduce((sum, w) => sum + (w.balance || 0), 0);
+  const activeCount = walletsList.filter((w) => w.isActive).length;
+
+  const openAddModal = () => {
+    setEditingId(null);
+    setFormName('');
     setFormAddress('');
-    setFormPrivateKey('');
-    setFormChain('');
-    setFormBalance(0);
-    setShowAddForm(false);
+    setFormChain(CHAIN_OPTIONS[0]);
+    setFormBalance('');
+    setFormError(null);
+    setModalOpen(true);
   };
 
-  const handleStartEdit = (w: CustomWalletItem) => {
-    setEditingId(w.id);
-    setEditAddress(w.address);
-    setEditPrivateKey(w.privateKey);
-    setEditChain(w.chain);
-    setEditBalance(w.balance);
+  const openEditModal = (item: CustomWalletItem) => {
+    setEditingId(item.id);
+    setFormName(item.name);
+    setFormAddress(item.address);
+    setFormChain(item.chain);
+    setFormBalance(String(item.balance));
+    setFormError(null);
+    setModalOpen(true);
   };
 
-  const handleSaveEdit = (id: string) => {
-    const updated = walletsList.map((item) => {
-      if (item.id === id) {
-        return {
-          ...item,
-          address: shortenAddress(editAddress),
-          privateKey: shortenPrivateKey(editPrivateKey) || '••••••••',
-          chain: editChain,
-          balance: Number(editBalance) || 0
-        };
-      }
-      return item;
-    });
-    onUpdateWalletsList(updated);
+  const closeModal = () => {
+    setModalOpen(false);
     setEditingId(null);
   };
 
-  const handleDeleteWallet = (id: string) => {
-    if (confirm('Delete this wallet?')) {
-      const filtered = walletsList.filter((item) => item.id !== id);
-      onUpdateWalletsList(filtered);
-    }
-  };
-
-  const executeTransfer = async () => {
-    const amount = Number(manualAmount);
-    const maxBalance = settings?.accumulatedProfitsUsd || 250.0;
-
-    if (isNaN(amount) || amount <= 0) {
-      setWithdrawalMessage({ type: 'error', text: 'Enter a valid amount.' });
+  const saveWallet = () => {
+    if (!formName.trim() || !formAddress.trim()) {
+      setFormError('Name and address are required.');
       return;
     }
-    if (amount > maxBalance) {
-      setWithdrawalMessage({ type: 'error', text: `Insufficient balance. Max: ${convertAndFormat(maxBalance)}.` });
-      return;
-    }
-
-    try {
-      if (onTransferProfit) {
-        await onTransferProfit();
-      }
-
-      const txHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-      const newHistoryItem: TransferHistoryItem = {
-        id: `tf-${Date.now()}`,
-        timestamp: Date.now(),
-        type: settings?.profitTransferMode === 'AUTO' ? 'AUTO' : 'MANUAL',
-        amount,
-        token: 'USDC',
-        recipient: settings?.ownerWalletAddress || '0x...',
-        txHash,
-        status: 'SUCCESS'
+    const balance = parseFloat(formBalance) || 0;
+    if (editingId) {
+      onUpdateWalletsList((prev) =>
+        prev.map((w) => (w.id === editingId ? { ...w, name: formName.trim(), address: formAddress.trim(), chain: formChain, balance } : w)),
+      );
+    } else {
+      const newItem: CustomWalletItem = {
+        id: `w-${Date.now()}`,
+        name: formName.trim(),
+        address: formAddress.trim(),
+        // Private keys are never stored from UI input nor displayed in plaintext.
+        privateKey: 'REDACTED',
+        chain: formChain,
+        balance,
+        isActive: true,
       };
-
-      setTransferHistory([newHistoryItem, ...transferHistory]);
-      setWithdrawalMessage({
-        type: 'success',
-        text: `Transferred ${convertAndFormat(amount)} successfully!`
-      });
-      setManualAmount('');
-    } catch (err) {
-      setWithdrawalMessage({ type: 'error', text: 'Transfer failed.' });
+      onUpdateWalletsList((prev) => [...prev, newItem]);
     }
+    closeModal();
   };
 
-  const sortedWallets = [...walletsList].sort((a, b) => {
-    let aVal = a[sortBy];
-    let bVal = b[sortBy];
-    if (typeof aVal === 'string' && typeof bVal === 'string') {
-      return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-    }
-    if (typeof aVal === 'number' && typeof bVal === 'number') {
-      return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
-    }
-    return 0;
-  });
+  const deleteWallet = (id: string) => {
+    const item = walletsList.find((w) => w.id === id);
+    if (!item) return;
+    if (!window.confirm(`Remove "${item.name}"?`)) return;
+    onUpdateWalletsList((prev) => prev.filter((w) => w.id !== id));
+  };
 
-  const totalBalance = walletsList.reduce((sum, w) => sum + w.balance, 0);
-  const isAutoPayoutOn = settings?.profitTransferMode === 'AUTO';
+  const toggleActive = (id: string) => {
+    onUpdateWalletsList((prev) =>
+      prev.map((w) => (w.id === id ? { ...w, isActive: !w.isActive } : w)),
+    );
+  };
+
+  const handleTransferMode = async (mode: 'AUTO' | 'MANUAL') => {
+    setActionError(null);
+    await onUpdateSettings({ profitTransferMode: mode });
+  };
+
+  const handleDepositSubmit = async () => {
+    const amount = parseFloat(depositAmount);
+    if (!amount || amount <= 0) {
+      setActionError('Enter a valid deposit amount.');
+      return;
+    }
+    setActionError(null);
+    const res = await onDeposit(amount, depositToken);
+    if (!res.success) setActionError(res.error || 'Deposit failed.');
+    else setDepositAmount('');
+  };
+
+  const handleWithdrawSubmit = async () => {
+    const amount = parseFloat(withdrawAmount);
+    if (!amount || amount <= 0) {
+      setActionError('Enter a valid withdraw amount.');
+      return;
+    }
+    setActionError(null);
+    const res = await onWithdraw(amount, withdrawToken);
+    if (!res.success) setActionError(res.error || 'Withdrawal failed.');
+    else setWithdrawAmount('');
+  };
+
+  const sortIndicator = (field: SortField) =>
+    sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '';
 
   return (
-    <div className="space-y-6 animate-fadeIn" id="wallet-dashboard-parent">
-      
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/10 pb-4">
-        <div>
-          <h1 className={`text-xl font-sans font-extrabold tracking-tight ${styles.textWhite}`}>
-            Wallets
-          </h1>
-          <p className={`text-xs ${styles.textMuted} mt-0.5`}>
-            Manage your wallets
-          </p>
-        </div>
-
-        <div className={`flex items-center space-x-3 px-4 py-2.5 rounded-xl ${styles.card}`}>
-          <div className="p-1.5 rounded-lg bg-teal-500/10 text-teal-400">
+    <div className="space-y-6 animate-fadeIn" id="wallet-view">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center space-x-2.5">
+          <div className="p-2 bg-teal-500/15 rounded-xl text-teal-400 border border-teal-500/30">
             <Wallet className="h-5 w-5" />
           </div>
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Balance</div>
-            <div className="text-lg font-mono font-bold text-teal-400">{convertAndFormat(totalBalance)}</div>
+            <h1 className={`text-xl font-sans font-extrabold tracking-tight ${styles.textWhite}`}>Wallet Manager</h1>
+            <p className={`text-xs ${styles.textMuted} mt-0.5`}>
+              {walletsList.length} tracked · {activeCount} active · {convertAndFormat(totalTrackedUsd)} total
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowKeys((v) => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono font-bold transition-all ${styles.btnSecondary}`}
+            title={showKeys ? 'Hide key status' : 'Show key status'}
+          >
+            {showKeys ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            {showKeys ? 'Hide Keys' : 'Show Keys'}
+          </button>
+          <button
+            onClick={openAddModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-teal-500 hover:bg-teal-600 text-slate-950 transition-all"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Wallet
+          </button>
+        </div>
+      </div>
+
+      {/* Profit Transfer Controls */}
+      <div className={styles.card} id="profit-transfer-controls">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center space-x-2">
+            <Send className="h-4 w-4 text-teal-400" />
+            <span className={`text-xs font-extrabold tracking-wide uppercase ${styles.textWhite}`}>Profit Transfer</span>
+            <span className="text-[10px] font-mono text-slate-500">
+              min {convertAndFormat(settings.profitTransferMinThresholdUsd)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleTransferMode('AUTO')}
+              className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
+                settings.profitTransferMode === 'AUTO'
+                  ? 'bg-teal-500 text-slate-950 shadow-sm'
+                  : 'bg-slate-800 text-slate-400 border border-slate-700/50'
+              }`}
+            >
+              Auto
+            </button>
+            <button
+              onClick={() => handleTransferMode('MANUAL')}
+              className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
+                settings.profitTransferMode === 'MANUAL'
+                  ? 'bg-teal-500 text-slate-950 shadow-sm'
+                  : 'bg-slate-800 text-slate-400 border border-slate-700/50'
+              }`}
+            >
+              Manual
+            </button>
+            <button
+              onClick={() => onTransferProfit()}
+              disabled={transferringProfit}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all ${
+                transferringProfit
+                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  : 'bg-teal-500 hover:bg-teal-600 text-slate-950 cursor-pointer'
+              }`}
+            >
+              {transferringProfit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+              {transferringProfit ? 'Transferring…' : 'Transfer Profit'}
+            </button>
+          </div>
+        </div>
+        <p className={`text-[10px] ${styles.textMuted} mt-2`}>
+          Transfers sweep accumulated profits above the configured minimum threshold to the owner wallet. Keys remain REDACTED and are never shown.
+        </p>
+      </div>
+
+      {/* Deposit / Withdraw */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className={styles.card}>
+          <div className="flex items-center space-x-2 mb-3">
+            <ArrowDownToLine className="h-4 w-4 text-emerald-400" />
+            <span className={`text-xs font-extrabold tracking-wide uppercase ${styles.textWhite}`}>Deposit</span>
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className={`text-[10px] uppercase tracking-wider ${styles.textMuted}`}>Amount</label>
+              <input
+                type="number"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full mt-1 px-3 py-2 rounded-xl ${styles.inputBg} text-sm font-mono outline-none"
+              />
+            </div>
+            <select
+              value={depositToken}
+              onChange={(e) => setDepositToken(e.target.value)}
+              className="px-3 py-2 rounded-xl ${styles.inputBg} text-sm font-mono outline-none"
+            >
+              {['USDC', 'USDT', 'ETH', 'WBTC'].map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <button
+              onClick={handleDepositSubmit}
+              disabled={isUpdating}
+              className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all ${
+                isUpdating ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950'
+              }`}
+            >
+              Deposit
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.card}>
+          <div className="flex items-center space-x-2 mb-3">
+            <ArrowUpFromLine className="h-4 w-4 text-rose-400" />
+            <span className={`text-xs font-extrabold tracking-wide uppercase ${styles.textWhite}`}>Withdraw</span>
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className={`text-[10px] uppercase tracking-wider ${styles.textMuted}`}>Amount</label>
+              <input
+                type="number"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full mt-1 px-3 py-2 rounded-xl ${styles.inputBg} text-sm font-mono outline-none"
+              />
+            </div>
+            <select
+              value={withdrawToken}
+              onChange={(e) => setWithdrawToken(e.target.value)}
+              className="px-3 py-2 rounded-xl ${styles.inputBg} text-sm font-mono outline-none"
+            >
+              {['USDC', 'USDT', 'ETH', 'WBTC'].map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <button
+              onClick={handleWithdrawSubmit}
+              disabled={isUpdating}
+              className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all ${
+                isUpdating ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-rose-500 hover:bg-rose-600 text-slate-950'
+              }`}
+            >
+              Withdraw
+            </button>
           </div>
         </div>
       </div>
 
-      {/* WALLET TABLE */}
-      <div className={styles.card}>
+      {actionError && (
+        <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 text-xs font-mono">
+          {actionError}
+        </div>
+      )}
+
+      {/* Wallets Table */}
+      <div className={styles.tableBg} id="wallets-table">
         <div className="flex items-center justify-between mb-4">
-          <h2 className={`text-base font-bold ${styles.textWhite}`}>
-            Wallets
-            <span className="text-xs px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 font-mono font-bold ml-2">
-              {walletsList.length}
-            </span>
-          </h2>
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${styles.btnPrimary}`}
-          >
-            <Plus className="h-4 w-4" />
-            <span>Add Wallet</span>
-          </button>
+          <h3 className={`font-sans font-bold text-base ${styles.textWhite}`}>Tracked Wallets</h3>
+          <span className="text-[10px] font-mono text-slate-500">{walletsList.length} entries</span>
         </div>
 
-        {/* INLINE ADD FORM */}
-        {showAddForm && (
-          <form onSubmit={handleAddWallet} className="mb-4 p-4 rounded-xl bg-slate-950/40 border border-slate-800/60 space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Address</label>
-                <div className="relative">
-                  <input 
-                    type="text" 
-                    required
-                    placeholder="0x..."
-                    value={formAddress}
-                    onChange={(e) => {
-                      setFormAddress(e.target.value);
-                      setFormChain('');
-                      setFormBalance(0);
-                    }}
-                    className={`w-full px-3 py-2 text-xs font-mono rounded-xl ${styles.inputBg}`}
-                  />
-                  {isDetecting && (
-                    <div className="absolute right-2 top-2">
-                      <Search className="h-3.5 w-3.5 text-teal-400 animate-spin" />
-                    </div>
-                  )}
-                </div>
-                {isDetecting && (
-                  <p className="text-[9px] text-teal-400 mt-0.5">Detecting chain & balance...</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Private Key</label>
-                <input 
-                  type="text" 
-                  placeholder="Paste private key"
-                  value={formPrivateKey}
-                  onChange={(e) => setFormPrivateKey(e.target.value)}
-                  className={`w-full px-3 py-2 text-xs font-mono rounded-xl ${styles.inputBg}`}
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Chain</label>
-                <input 
-                  type="text"
-                  required
-                  placeholder={isDetecting ? 'Detecting...' : 'Auto-detected'}
-                  value={formChain}
-                  readOnly
-                  className={`w-full px-3 py-2 text-xs font-mono rounded-xl ${styles.inputBg} ${isDetecting ? 'animate-pulse' : ''}`}
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Balance (USD)</label>
-                <input 
-                  type="number" 
-                  required
-                  placeholder={isDetecting ? 'Detecting...' : 'Auto-detected'}
-                  value={formBalance}
-                  readOnly
-                  className={`w-full px-3 py-2 text-xs font-mono rounded-xl ${styles.inputBg} ${isDetecting ? 'animate-pulse' : ''}`}
-                />
-              </div>
-            </div>
-            <div className="flex items-center space-x-2">
-              <button
-                type="submit"
-                disabled={!formAddress || !formChain || isDetecting}
-                className={`px-4 py-2 rounded-xl text-xs font-bold ${styles.btnPrimary} disabled:opacity-40 disabled:cursor-not-allowed`}
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddForm(false);
-                  setFormAddress('');
-                  setFormPrivateKey('');
-                  setFormChain('');
-                  setFormBalance(0);
-                  setIsDetecting(false);
-                }}
-                className={`px-4 py-2 rounded-xl text-xs font-bold ${styles.btnSecondary}`}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        )}
-
         <div className="overflow-x-auto rounded-xl border border-slate-800/15">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="w-full text-left text-[11px] border-collapse">
             <thead>
-              <tr className={styles.tableHeaderBg}>
-                <th 
-                  onClick={() => handleSort('address')}
-                  className="py-3 px-4 font-bold tracking-wider cursor-pointer hover:text-white select-none"
-                >
-                  <div className="flex items-center space-x-1">
-                    <span>Address</span>
-                    {sortBy === 'address' && (sortOrder === 'asc' ? <ChevronUp className="h-3.5 w-3.5 text-teal-400" /> : <ChevronDown className="h-3.5 w-3.5 text-teal-400" />)}
-                  </div>
+              <tr className={styles.tableHeader}>
+                <th onClick={() => handleSort('name')} className="py-2.5 px-3 font-bold cursor-pointer hover:text-white select-none">
+                  Name{sortIndicator('name')}
                 </th>
-                <th className="py-3 px-4 font-bold tracking-wider">Private Key</th>
-                <th 
-                  onClick={() => handleSort('chain')}
-                  className="py-3 px-4 font-bold tracking-wider cursor-pointer hover:text-white select-none"
-                >
-                  <div className="flex items-center space-x-1">
-                    <span>Chain</span>
-                    {sortBy === 'chain' && (sortOrder === 'asc' ? <ChevronUp className="h-3.5 w-3.5 text-teal-400" /> : <ChevronDown className="h-3.5 w-3.5 text-teal-400" />)}
-                  </div>
+                <th onClick={() => handleSort('address')} className="py-2.5 px-3 font-bold cursor-pointer hover:text-white select-none">
+                  Address{sortIndicator('address')}
                 </th>
-                <th 
-                  onClick={() => handleSort('balance')}
-                  className="py-3 px-4 font-bold tracking-wider text-right cursor-pointer hover:text-white select-none"
-                >
-                  <div className="flex items-center justify-end space-x-1">
-                    <span>Balance</span>
-                    {sortOrder === 'asc' && sortBy === 'balance' ? <ChevronUp className="h-3.5 w-3.5 text-teal-400" /> : sortOrder === 'desc' && sortBy === 'balance' ? <ChevronDown className="h-3.5 w-3.5 text-teal-400" /> : null}
-                  </div>
+                <th onClick={() => handleSort('chain')} className="py-2.5 px-3 font-bold cursor-pointer hover:text-white select-none">
+                  Chain{sortIndicator('chain')}
                 </th>
-                <th className="py-3 px-4 text-center w-24">Actions</th>
+                <th onClick={() => handleSort('balance')} className="py-2.5 px-3 font-bold cursor-pointer hover:text-white select-none">
+                  Balance{sortIndicator('balance')}
+                </th>
+                <th className="py-2.5 px-3 font-bold">Key</th>
+                <th className="py-2.5 px-3 font-bold text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/10">
-              {sortedWallets.map((w) => {
-                const isEditing = editingId === w.id;
-
-                return (
-                  <tr 
-                    key={w.id} 
-                    className={`${styles.tableRowBorder} ${styles.tableRowHover} transition-all`}
-                  >
-                    <td className="py-3 px-4 font-mono text-slate-400">
-                      {isEditing ? (
-                        <input 
-                          type="text" 
-                          value={editAddress}
-                          onChange={(e) => setEditAddress(e.target.value)}
-                          className={`w-full px-2 py-1 text-xs font-mono rounded border ${styles.inputBg}`}
-                        />
-                      ) : (
-                        <div className="flex items-center space-x-1.5">
-                          <span className="text-[11px]">{shortenAddress(w.address)}</span>
-                          <button 
-                            onClick={() => navigator.clipboard.writeText(w.address)}
-                            className="text-slate-500 hover:text-teal-400 transition-colors"
-                            title="Copy full address"
-                          >
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                            </svg>
-                          </button>
-                        </div>
-                      )}
+            <tbody className="divide-y divide-slate-800/20">
+              {sortedWallets.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-slate-500 font-mono text-xs animate-pulse">
+                    No wallets yet. Click “Add Wallet” to get started.
+                  </td>
+                </tr>
+              ) : (
+                sortedWallets.map((w) => (
+                  <tr key={w.id} className={styles.tableRow}>
+                    <td className="py-2.5 px-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-mono ${styles.textMuted}`}>
+                          {w.isActive ? '●' : '○'}
+                        </span>
+                        <span className={`font-semibold ${styles.textWhite}`}>{w.name}</span>
+                      </div>
                     </td>
-
-                    <td className="py-3 px-4 font-mono text-slate-400">
-                      {isEditing ? (
-                        <input 
-                          type="text" 
-                          value={editPrivateKey}
-                          onChange={(e) => setEditPrivateKey(e.target.value)}
-                          className={`w-full px-2 py-1 text-xs font-mono rounded border ${styles.inputBg}`}
-                        />
-                      ) : (
-                        <span className="text-[11px]">{shortenPrivateKey(w.privateKey)}</span>
-                      )}
+                    <td className={`py-2.5 px-3 font-mono ${styles.textMuted}`}>{shortAddress(w.address)}</td>
+                    <td className="py-2.5 px-3">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${styles.badgeMuted}`}>{w.chain}</span>
                     </td>
-
-                    <td className="py-3 px-4 font-medium text-slate-300">
-                      {isEditing ? (
-                        <select 
-                          value={editChain}
-                          onChange={(e) => setEditChain(e.target.value)}
-                          className={`w-full px-2 py-1 text-xs rounded border ${styles.inputBg}`}
+                    <td className="py-2.5 px-3 font-mono font-bold text-emerald-400">{convertAndFormat(w.balance)}</td>
+                    <td className="py-2.5 px-3">
+                      {showKeys ? (
+                        <button
+                          onClick={() => setRevealId(revealId === w.id ? null : w.id)}
+                          className="flex items-center gap-1 text-[10px] font-mono text-slate-500 hover:text-teal-400 transition-all"
+                          title="Reveal key status"
                         >
-                          {CHAINS.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
+                          <ShieldCheck className="h-3 w-3" />
+                          {revealId === w.id ? w.privateKey : 'REDACTED'}
+                        </button>
                       ) : (
-                        <span>{w.chain}</span>
+                        <span className="text-[10px] font-mono text-slate-600">••••••••</span>
                       )}
                     </td>
-
-                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-200">
-                      {isEditing ? (
-                        <input 
-                          type="number" 
-                          step="any"
-                          value={editBalance}
-                          onChange={(e) => setEditBalance(Number(e.target.value))}
-                          className={`w-28 text-right px-2 py-1 text-xs rounded border ${styles.inputBg}`}
-                        />
-                      ) : (
-                        <span>{convertAndFormat(w.balance)}</span>
-                      )}
-                    </td>
-
-                    <td className="py-3 px-4 text-center font-mono">
-                      <div className="flex items-center justify-center space-x-2">
-                        {isEditing ? (
-                          <>
-                            <button
-                              onClick={() => handleSaveEdit(w.id)}
-                              className="p-1 rounded bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 transition-colors"
-                              title="Save"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => setEditingId(null)}
-                              className="p-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors"
-                              title="Cancel"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => handleStartEdit(w)}
-                              className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-teal-400 transition-colors"
-                              title="Edit"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteWallet(w.id)}
-                              className="p-1 rounded bg-slate-800 hover:bg-rose-950/40 text-slate-300 hover:text-rose-400 transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </>
-                        )}
+                    <td className="py-2.5 px-3 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => toggleActive(w.id)}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${styles.btnSecondary}`}
+                          title={w.isActive ? 'Deactivate' : 'Activate'}
+                        >
+                          {w.isActive ? 'Active' : 'Paused'}
+                        </button>
+                        <button
+                          onClick={() => openEditModal(w)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-teal-400 hover:bg-slate-800/40 transition-all"
+                          title="Edit"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => deleteWallet(w.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800/40 transition-all"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* TRANSFER MODE + MANUAL TRANSFER + HISTORY */}
-      <div className={styles.card}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className={`text-base font-bold ${styles.textWhite}`}>Transfer</h2>
-          <div className="flex items-center space-x-3">
-            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${
-              isAutoPayoutOn ? 'bg-teal-500/10 text-teal-300' : 'bg-amber-500/10 text-amber-300'
-            }`}>
-              {isAutoPayoutOn ? 'AUTO' : 'MANUAL'}
-            </span>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={isAutoPayoutOn}
-                onChange={(e) => onUpdateSettings({ profitTransferMode: e.target.checked ? 'AUTO' : 'MANUAL' })}
-                className="sr-only peer" 
-              />
-              <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-500 peer-checked:after:bg-slate-950"></div>
-            </label>
-          </div>
-        </div>
-
-        {withdrawalMessage && (
-          <div className={`p-3 rounded-xl mb-3 text-xs font-semibold flex items-center space-x-2 border ${
-            withdrawalMessage.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-          }`}>
-            <span>{withdrawalMessage.text}</span>
-          </div>
-        )}
-
-        {/* Manual transfer form - only shown in MANUAL mode */}
-        {!isAutoPayoutOn && (
-          <form onSubmit={(e) => { e.preventDefault(); executeTransfer(); }} className="flex items-end gap-3 mb-4">
-            <div className="flex-1">
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Amount (USD)</label>
-              <input
-                type="number"
-                step="any"
-                placeholder="0.00"
-                value={manualAmount}
-                onChange={(e) => setManualAmount(e.target.value)}
-                className={`w-full text-xs rounded-xl px-3 py-2 ${styles.inputBg}`}
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={!manualAmount}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 ${styles.btnPrimary} disabled:opacity-40 disabled:cursor-not-allowed`}
-            >
-              <span>Transfer</span>
-            </button>
-          </form>
-        )}
-
-        {/* Transfer History */}
-        <div className="overflow-x-auto rounded-xl border border-slate-800/15">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className={styles.tableHeaderBg}>
-                <th className="py-2.5 px-4">Time</th>
-                <th className="py-2.5 px-4">Type</th>
-                <th className="py-2.5 px-4">Recipient</th>
-                <th className="py-2.5 px-4">Amount</th>
-                <th className="py-2.5 px-4 font-mono">Tx Hash</th>
-                <th className="py-2.5 px-4 text-center">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/10">
-              {transferHistory.map((tf) => (
-                <tr key={tf.id} className={`${styles.tableRowBorder} ${styles.tableRowHover}`}>
-                  <td className="py-2.5 px-4 text-slate-400">
-                    {new Date(tf.timestamp).toLocaleString()}
-                  </td>
-                  <td className="py-2.5 px-4">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
-                      tf.type === 'AUTO' ? 'bg-indigo-500/10 text-indigo-300' : 'bg-teal-500/10 text-teal-300'
-                    }`}>
-                      {tf.type}
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-4 font-mono text-slate-400 text-[11px]">
-                    {tf.recipient.slice(0, 6)}...{tf.recipient.slice(-4)}
-                  </td>
-                  <td className="py-2.5 px-4 font-mono font-bold text-teal-400">
-                    {convertAndFormat(tf.amount)} {tf.token}
-                  </td>
-                  <td className="py-2.5 px-4 font-mono text-slate-500 text-[11px]">
-                    <span className="hover:text-teal-400 cursor-pointer transition-colors" onClick={() => navigator.clipboard.writeText(tf.txHash)} title="Copy">
-                      {tf.txHash.slice(0, 18)}...{tf.txHash.slice(-10)}
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-4 text-center">
-                    <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                      {tf.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {transferHistory.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-6 text-center text-slate-500 text-xs">
-                    No transfers yet
-                  </td>
-                </tr>
+                ))
               )}
             </tbody>
           </table>
         </div>
       </div>
 
+      {/* Add / Edit Modal */}
+      {modalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={closeModal}
+        >
+          <div
+            className={`${styles.card} w-full max-w-md`}
+            onClick={(e) => e.stopPropagation()}
+            id="wallet-modal"
+          >
+            <h3 className={`font-sans font-bold text-base ${styles.textWhite} mb-4`}>
+              {editingId ? 'Edit Wallet' : 'Add Wallet'}
+            </h3>
+
+            <label className={`text-[10px] uppercase tracking-wider ${styles.textMuted}`}>Name</label>
+            <input
+              value={formName}
+              onChange={(e) => setFormName(e.target.value)}
+              placeholder="Commander Wallet"
+              className={`w-full mt-1 mb-3 px-3 py-2 rounded-xl ${styles.inputBg} text-sm font-mono outline-none`}
+            />
+
+            <label className={`text-[10px] uppercase tracking-wider ${styles.textMuted}`}>Address</label>
+            <input
+              value={formAddress}
+              onChange={(e) => setFormAddress(e.target.value)}
+              placeholder="0x…"
+              className="w-full mt-1 mb-3 px-3 py-2 rounded-xl ${styles.inputBg} text-sm font-mono outline-none"
+            />
+
+            <label className={`text-[10px] uppercase tracking-wider ${styles.textMuted}`}>Chain</label>
+            <select
+              value={formChain}
+              onChange={(e) => setFormChain(e.target.value)}
+              className={`w-full mt-1 mb-3 px-3 py-2 rounded-xl ${styles.inputBg} text-sm font-mono outline-none`}
+            >
+              {CHAIN_OPTIONS.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+
+            <label className={`text-[10px] uppercase tracking-wider ${styles.textMuted}`}>Balance (USD)</label>
+            <input
+              type="number"
+              value={formBalance}
+              onChange={(e) => setFormBalance(e.target.value)}
+              placeholder="0.00"
+              className="w-full mt-1 mb-3 px-3 py-2 rounded-xl ${styles.inputBg} text-sm font-mono outline-none"
+            />
+
+            {formError && (
+              <div className="mb-3 p-2 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-300 text-[11px] font-mono">
+                {formError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-2">
+              <button onClick={closeModal} className={`px-3 py-1.5 rounded-xl text-[11px] font-bold ${styles.btnSecondary}`}>
+                Cancel
+              </button>
+              <button
+                onClick={saveWallet}
+                className="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-teal-500 hover:bg-teal-600 text-slate-950"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

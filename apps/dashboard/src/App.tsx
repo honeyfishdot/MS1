@@ -350,7 +350,7 @@ export default function App() {
     profitTargetAuto: true, growthRate: 1.2, growthRateAuto: true, riskMode: 'BALANCED',
     riskModeAuto: true, stability: 85, stabilityAuto: true, fleetCapacity: 'AUTO', fleetCapacityAuto: true,
     chainsSelection: 'AUTO', chainsSelectionAuto: true,
-    accumulatedProfitsUsd: 0, profitTransferMinThresholdUsd: 100
+    accumulatedProfitsUsd: 0, profitTransferMinThresholdUsd: 100, profitTransferMode: 'MANUAL'
   };
 
   const effectiveSettings = (settings || defaultSettings) as DashboardSettings;
