@@ -8,7 +8,7 @@ services:
     plan: starter
     branch: main
     rootDir: backend
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: backend/Dockerfile
     healthCheckPath: /healthz
     envVars:
       - key: RUST_LOG
@@ -48,7 +48,7 @@ services:
     plan: starter
     branch: main
     rootDir: apps/dashboard
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: apps/dashboard/Dockerfile
     healthCheckPath: /api/health
     envVars:
       - key: RUST_BACKEND_URL
