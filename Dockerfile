@@ -31,6 +31,7 @@ WORKDIR /app
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
 
 # Render serves on port 10000 by default, but we map to 80 in docker-compose
 # Render will set PORT env var automatically
