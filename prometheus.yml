@@ -9,10 +9,11 @@ global:
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: []
+        - targets: ['alertmanager:9093']
 
 rule_files:
-  - 'alerts.yml'
+  - 'prometheus/alerts.yml'
+  - 'prometheus/alert.rules.yml'
 
 scrape_configs:
   # Backend service metrics

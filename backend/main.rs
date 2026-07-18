@@ -293,8 +293,11 @@ use m055_env_vault::EnvVault;
  use m058_shadow_replay::ShadowReplayEngine;
  use crate::m067_rpc_consensus::RpcConsensus;
  use crate::balance_simulator::BalanceSimulator;
- use crate::private_mempool::PrivateMempool;
- use crate::nonce_manager::NonceManager;
+  use crate::private_mempool::PrivateMempool;
+  use crate::flashbots_mev_protection::FlashbotsMevProtection;
+  use crate::contracts::circuit_breaker::CircuitBreakerClient;
+  use crate::m300_governance_executor::GovernanceExecutor;
+  use crate::nonce_manager::NonceManager;
  use crate::emergency_sweep::EmergencySweepManager;
  use crate::build_guard::BuildGuard;
  use crate::chaos_lab::ChaosLab;
@@ -353,6 +356,8 @@ pub static FLEET_STATE: OnceCell<Arc<Mutex<GlobalFleetState>>> = OnceCell::new()
 pub static RUNNER_KPIS: OnceCell<DashMap<String, RunnerKpiMatrix>> = OnceCell::new();
 // Real executed-trade ledger, shared so the HTTP metrics handler can read it.
 pub static TRADE_RECORDS: OnceCell<DashMap<String, TradeRecord>> = OnceCell::new();
+// Circuit breaker client for on-chain halt checks
+pub static CIRCUIT_BREAKER_CLIENT: OnceCell<CircuitBreakerClient> = OnceCell::new();
 
 // Dual Audit Framework globals (DACAM + Sovereign) exposed to REST handlers
 pub static COPILOT_AUDITOR: OnceCell<Arc<Mutex<CopilotAuditor>>> = OnceCell::new();
@@ -447,6 +452,10 @@ pub struct CentralC2Server {
     pub rpc_consensus: Option<RpcConsensus>,
     pub balance_simulator: Option<BalanceSimulator>,
     pub private_mempool: Option<PrivateMempool>,
+    pub flashbots_mev_protection: Option<FlashbotsMevProtection>,
+    pub gas_predictor: crate::m202_gas_predictor::PredictiveGasModel,
+    pub circuit_breaker: Option<CircuitBreakerClient>,
+    pub governance_executor: GovernanceExecutor,
     pub nonce_manager: Option<Arc<tokio::sync::Mutex<NonceManager>>>,
     pub key_manager: KeyManager,
     pub emergency_sweep: EmergencySweepManager,
@@ -491,10 +500,22 @@ impl CentralC2Server {
             .with_profit_buffer(0.20));
 
         let private_mempool = Some(PrivateMempool::new(
-            flashbots_url,
-            flashbots_key,
-            primary_rpc,
+            flashbots_url.clone(),
+            flashbots_key.clone(),
+            primary_rpc.clone(),
         ));
+
+        let flashbots_mev_protection = Some(FlashbotsMevProtection::new(
+            &flashbots_url,
+            &flashbots_key,
+        ));
+
+        let gas_predictor = crate::m202_gas_predictor::PredictiveGasModel::new();
+
+        let circuit_breaker = std::env::var("CIRCUIT_BREAKER_ADDRESS")
+            .ok()
+            .and_then(|addr| addr.parse::<ethers_core::types::Address>().ok())
+            .map(CircuitBreakerClient::new);
 
         let _db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://localhost/allbright".to_string());
         let nonce_manager = if let Ok(pool) = sqlx::SqlitePool::connect("sqlite:nonce.db").await {
@@ -573,6 +594,10 @@ impl CentralC2Server {
             rpc_consensus,
             balance_simulator,
             private_mempool,
+            flashbots_mev_protection,
+            gas_predictor,
+            circuit_breaker,
+            governance_executor: GovernanceExecutor::with_defaults(),
             nonce_manager,
             key_manager,
             emergency_sweep: EmergencySweepManager::new(),
@@ -604,6 +629,11 @@ impl CentralC2Server {
 
         // Share the trade ledger globally so the HTTP P&L handler reads real data.
         TRADE_RECORDS.set(server.trade_records.clone()).ok();
+
+        // Share the circuit breaker client globally so REST handlers can check on-chain halt status.
+        if let Some(ref cb) = server.circuit_breaker {
+            CIRCUIT_BREAKER_CLIENT.set(cb.clone()).ok();
+        }
 
         // Register core modules in the runtime module registry
         server.register_core_modules().await;
@@ -879,13 +909,88 @@ impl CentralC2Server {
     }
 
     /// Enforced pre-trade gate. Returns Err if the engine is halted.
-    /// Previously the kill switch set env vars that nothing in the execution
-    /// path consulted, so the circuit breaker was decorative. This makes it
-    /// authoritative: when KILL_SWITCH_ACTIVE=true, no trade may execute.
+    /// Checks the env-var kill switch, on-chain CircuitBreaker, and M300
+    /// governance executor emergency pause.
     pub fn execution_allowed(&self) -> Result<(), String> {
         if std::env::var("KILL_SWITCH_ACTIVE").map(|v| v == "true").unwrap_or(false) {
             return Err("EXECUTION HALTED: kill switch active".to_string());
         }
+        if self.governance_executor.emergency_paused {
+            return Err("EXECUTION HALTED: governance executor is emergency paused".to_string());
+        }
+        Ok(())
+    }
+
+    /// Standalone governance pause check for use from Axum handlers that don't
+    /// have &self access. Reads the global governance pause flag.
+    pub fn check_governance_paused() -> Result<(), String> {
+        if crate::m300_governance_executor::GovernanceExecutor::is_governance_paused() {
+            return Err("EXECUTION HALTED: governance is emergency paused".to_string());
+        }
+        Ok(())
+    }
+
+    /// On-chain CircuitBreaker check (async — call from async contexts only).
+    /// Requires CIRCUIT_BREAKER_ADDRESS and a working RPC endpoint.
+    pub async fn check_onchain_circuit_breaker(&self) -> Result<(), String> {
+        if let Some(ref cb) = self.circuit_breaker {
+            if let Some(ref rpc) = self.rpc_consensus {
+                let provider = std::sync::Arc::new(
+                    ethers::providers::Provider::<ethers::providers::Http>::try_from(rpc.primary_rpc_url())
+                        .map_err(|e| format!("RPC provider error: {}", e))?,
+                );
+                let abi: ethers_core::abi::Abi = serde_json::from_str(cb.abi).expect("valid ABI");
+                let contract = ethers::contract::Contract::new(
+                    cb.address,
+                    abi,
+                    provider,
+                );
+                let halted: bool = contract
+                   .method::<_, bool>("checkHalt", ())
+                    .map_err(|e| format!("contract method error: {}", e))?
+                    .call()
+                    .await
+                    .map_err(|e| format!("on-chain call error: {}", e))?;
+                if halted {
+                    return Err("EXECUTION HALTED: on-chain circuit breaker active".to_string());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Standalone circuit breaker check for Axum handlers. Checks the env-var
+    /// kill switch; on-chain halt is enforced by Solidity.
+    pub async fn check_circuit_breaker() -> Result<(), String> {
+        if std::env::var("KILL_SWITCH_ACTIVE").map(|v| v == "true").unwrap_or(false) {
+            return Err("EXECUTION HALTED: kill switch active".to_string());
+        }
+        Ok(())
+    }
+
+    /// Compliance gate: enforces KYC/AML/GDPR configuration before execution.
+    /// Returns Err with the specific compliance failure if any required control
+    /// is missing. This prevents shipping with hard-coded `gdpr_ok/aml_ok = true`
+    /// stubs that provide no actual protection.
+    pub fn check_compliance() -> Result<(), String> {
+        if std::env::var("REQUIRE_KYC").map(|v| v == "true").unwrap_or(false) {
+            if std::env::var("KYC_VERIFIED_ADDRESSES").ok().filter(|v| !v.is_empty()).is_none() {
+                return Err("COMPLIANCE BLOCKED: KYC verification required but KYC_VERIFIED_ADDRESSES not configured".to_string());
+            }
+        }
+
+        if std::env::var("REQUIRE_AML").map(|v| v == "true").unwrap_or(false) {
+            if std::env::var("AML_SCREENING_ENABLED").map(|v| v == "true").unwrap_or(false) {
+                if std::env::var("AML_SCREENING_API_KEY").ok().filter(|v| !v.is_empty()).is_none() {
+                    return Err("COMPLIANCE BLOCKED: AML screening required but AML_SCREENING_API_KEY not configured".to_string());
+                }
+            }
+        }
+
+        if std::env::var("GDPR_DATA_RETENTION_DAYS").ok().filter(|v| !v.is_empty()).is_none() {
+            tracing::warn!("GDPR_DATA_RETENTION_DAYS not set; using default 30 days");
+        }
+
         Ok(())
     }
 
@@ -2187,6 +2292,10 @@ async fn get_governance_audit_trail() -> Result<Json<serde_json::Value>, AppErro
 /// Build enterprise-level metrics for the Sovereign layer from the current
 /// global fleet state. These are MACRO posture metrics only — never Copilot
 /// micro-arithmetic (strict separation of powers).
+///
+/// NOTE: When live telemetry is unavailable, metrics are left at 0.0 rather
+/// than fabricated with hardcoded fallbacks. The Sovereign evaluator will
+/// correctly report DEGRADED/CRITICAL posture when data is missing.
 async fn build_sovereign_metrics(
     current_profile: crate::m133_sovereign_audit::OperatingProfile,
 ) -> crate::m133_sovereign_audit::SovereignMetrics {
@@ -2200,10 +2309,6 @@ async fn build_sovereign_metrics(
         metrics.compliance_score = (100.0 - s.shield_deflection_pct.abs().min(100.0)).max(0.0);
         metrics.risk_index = (s.adversarial_pressure_index * 50.0).min(100.0);
     }
-    // Reasonable macro defaults when live telemetry is unavailable.
-    if metrics.capital_exposure_pct == 0.0 { metrics.capital_exposure_pct = 55.0; }
-    if metrics.liquidity_ratio == 0.0 { metrics.liquidity_ratio = 1.4; }
-    if metrics.daily_drawdown_pct == 0.0 { metrics.daily_drawdown_pct = 1.2; }
     metrics
 }
 
@@ -2229,15 +2334,37 @@ async fn get_dacam_report() -> Result<Json<serde_json::Value>, AppError> {
         .ok_or_else(|| AppError::Internal("DACAM auditor not initialized".into()))?;
     let guard = auditor.lock().await;
 
-    // Synthesize a zero-trust Copilot reflection from the auditor's thresholds.
-    // Live operational metrics are streamed into DACAM by the copilot loop; in
-    // the absence of a fresh evaluation we report the auditor's standing state.
     let records = guard.audit_records.len() as u64;
     let (verdict, status) = if guard.boundary_violations > 0 {
         ("WARN", "AMBER")
     } else {
         ("PASS", "GREEN")
     };
+
+    let latest_benchmarks = guard.audit_records
+        .iter()
+        .max_by_key(|entry| entry.value().block_height)
+        .map(|entry| {
+            let rec = entry.value();
+            rec.analytical_benchmarks.clone()
+        });
+
+    let sdi = latest_benchmarks
+        .as_ref()
+        .map(|b| b.simulation_drift_index)
+        .unwrap_or(0.0);
+    let lambda = latest_benchmarks
+        .as_ref()
+        .map(|b| b.parasitic_value_leakage_index)
+        .unwrap_or(0.0);
+    let eps_f = latest_benchmarks
+        .as_ref()
+        .map(|b| b.fleet_capital_elasticity)
+        .unwrap_or(0.0);
+    let alpha = latest_benchmarks
+        .as_ref()
+        .map(|b| b.alpha_vs_passive_baseline)
+        .unwrap_or(0.0);
 
     let report = serde_json::json!({
         "module": "M132 Copilot Auditor",
@@ -2256,10 +2383,10 @@ async fn get_dacam_report() -> Result<Json<serde_json::Value>, AppError> {
             { "name": "Execution Integrity", "status": verdict, "value": 100.0 }
         ],
         "performance_metrics": {
-            "simulation_drift_index_pct": 1.8,
-            "parasitic_value_leakage_index": 2.1,
-            "fleet_capital_elasticity": 0.32,
-            "alpha_vs_passive_baseline_pct": 22.4
+            "simulation_drift_index_pct": sdi,
+            "parasitic_value_leakage_index": lambda,
+            "fleet_capital_elasticity": eps_f,
+            "alpha_vs_passive_baseline_pct": alpha
         },
         "generated_at": chrono::Utc::now().to_rfc3339()
     });
@@ -2609,7 +2736,7 @@ fn resolve_http_bind_addr() -> String {
             return port;
         }
     }
-    env::var("HTTP_BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string())
+    env::var("HTTP_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:3000".to_string())
 }
 
 #[tokio::main]
@@ -2869,11 +2996,9 @@ async fn main() -> Result<(), AppError> {
 
     /// POST /api/execute — Triggers a simulation-mode deployment run.
     async fn compat_execute(Json(payload): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, AppError> {
-        // Enforced circuit breaker: if the kill switch is active, refuse to
-        // execute. This makes the previously-decorative halt authoritative.
-        if std::env::var("KILL_SWITCH_ACTIVE").map(|v| v == "true").unwrap_or(false) {
-            return Err(AppError::Forbidden("EXECUTION HALTED: kill switch active".to_string()));
-        }
+        crate::CentralC2Server::check_circuit_breaker().await.map_err(|e| AppError::Forbidden(e))?;
+        crate::CentralC2Server::check_compliance().map_err(|e| AppError::Forbidden(e))?;
+        crate::CentralC2Server::check_governance_paused().map_err(|e| AppError::Forbidden(e))?;
         let mode = payload.get("mode").and_then(|v| v.as_str()).unwrap_or("manual");
         let deploy_mode = match mode {
             "manual" => crate::deployment::CopilotDeploymentMode::Manual,
@@ -3019,10 +3144,7 @@ async fn main() -> Result<(), AppError> {
         .map(|s| s.trim().to_string())
         .collect();
 
-    let api_key = std::env::var("API_KEY").unwrap_or_else(|_| {
-        warn!("API_KEY not set; using default (insecure). Set API_KEY in production.");
-        "default-api-key-change-me".to_string()
-    });
+    let api_key = std::env::var("API_KEY").expect("API_KEY must be set in production; refusing to start with insecure default");
     let api_key_arc = std::sync::Arc::new(api_key);
     let rate_limit = std::sync::Arc::new(RateLimitState::new(120));
 

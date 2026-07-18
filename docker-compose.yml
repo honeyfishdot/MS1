@@ -130,11 +130,30 @@ services:
       - '--storage.tsdb.path=/prometheus'
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"   # Primary
       - "9091:9090"   # Backup 1
       - "9092:9090"   # Backup 2
+    networks:
+      - apx-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # ALERTMANAGER (Primary + 2 Backups)
+  # ============================================================================
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: allbright-alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    volumes:
+      - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"   # Primary
+      - "9094:9093"   # Backup 1
+      - "9095:9093"   # Backup 2
     networks:
       - apx-network
     restart: unless-stopped

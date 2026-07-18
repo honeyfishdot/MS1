@@ -6,3 +6,4 @@ pub mod aave;
 pub mod uniswap;
 pub mod dydx;
 pub mod balancer;
+pub mod circuit_breaker;

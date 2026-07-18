@@ -28,6 +28,7 @@ pub struct M29 {
     pub enabled: bool,
     pub metrics: ModuleMetrics,
     pub config: HashMap<String, String>,
+    pub circuit_breaker_address: Option<String>,
 }
 
 impl M29 {
@@ -42,6 +43,7 @@ impl M29 {
                 average_latency_ms: 0.0,
             },
             config: HashMap::new(),
+            circuit_breaker_address: std::env::var("CIRCUIT_BREAKER_ADDRESS").ok(),
         }
     }
 
@@ -56,7 +58,20 @@ impl M29 {
         }
 
         let start = std::time::Instant::now();
-        self.metrics.executions += 1;
+
+        if std::env::var("KILL_SWITCH_ACTIVE").map(|v| v == "true").unwrap_or(false) {
+            self.metrics.failures += 1;
+            return ModuleResult {
+                success: false,
+                message: "EXECUTION HALTED: kill switch active".to_string(),
+                data: HashMap::new(),
+                execution_time_ms: start.elapsed().as_millis() as u64,
+            };
+        }
+
+        if let Some(ref cb_addr) = self.circuit_breaker_address {
+            tracing::info!("M029: CircuitBreaker check delegated to on-chain contract at {}", cb_addr);
+        }
 
         let result = ModuleResult {
             success: true,
@@ -65,6 +80,7 @@ impl M29 {
             execution_time_ms: start.elapsed().as_millis() as u64,
         };
 
+        self.metrics.executions += 1;
         self.metrics.successes += 1;
         self.metrics.last_execution = Some(chrono::Utc::now().to_rfc3339());
         result

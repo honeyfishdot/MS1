@@ -6,10 +6,13 @@
 // ==============================================================================
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
 use crate::m135_flash_loan_governor::{PermissionRole, FlashLoanPolicy};
+
+static GOVERNANCE_PAUSED: AtomicBool = AtomicBool::new(false);
 
 /// Governance proposal types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -423,13 +426,21 @@ impl GovernanceExecutor {
     /// Emergency pause governance
     pub fn emergency_pause(&mut self, reason: String) {
         self.emergency_paused = true;
+        GOVERNANCE_PAUSED.store(true, Ordering::SeqCst);
         tracing::warn!("Governance emergency paused: {}", reason);
     }
 
     /// Resume governance after emergency pause
     pub fn emergency_resume(&mut self) {
         self.emergency_paused = false;
+        GOVERNANCE_PAUSED.store(false, Ordering::SeqCst);
         tracing::info!("Governance resumed from emergency pause");
+    }
+
+    /// Check if governance is currently emergency paused (global flag).
+    /// This can be called from anywhere without requiring &mut self.
+    pub fn is_governance_paused() -> bool {
+        GOVERNANCE_PAUSED.load(Ordering::SeqCst)
     }
 
     /// Process timelock queue

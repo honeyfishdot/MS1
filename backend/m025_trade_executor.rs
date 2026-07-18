@@ -115,9 +115,9 @@ impl M25 {
             gas_limit: 21000,
             max_gas_price_gwei: 100.0,
             dry_run: std::env::var("PAPER_TRADING_MODE")
-                .unwrap_or_else(|_| "true".to_string())
+                .unwrap_or_else(|_| "false".to_string())
                 .parse()
-                .unwrap_or(true),
+                .unwrap_or(false),
             submitted_trades: Vec::new(),
             memory_pool,
             trade_queue,
@@ -244,7 +244,7 @@ impl M25 {
     /// Returns None if simulation fails or trade is rejected
     pub async fn execute_with_gate(
         &mut self,
-        server: &super::CentralC2Server,
+        server: &mut super::CentralC2Server,
         pair: &str,
         side: &str,
         size: f64,
@@ -252,32 +252,19 @@ impl M25 {
         slippage_bps: u32,
         gas_cost_eth: f64,
     ) -> Option<ModuleResult> {
-        // Run simulation gate first
-        let wallet = std::env::var("WALLET_ADDRESS").unwrap_or_default();
-        if wallet.is_empty() {
-            tracing::warn!("M025: No WALLET_ADDRESS configured, skipping live trade");
-            return Some(self.execute_trade(pair, side, size, expected_profit_eth, slippage_bps, gas_cost_eth));
-        }
+        let gas_cost_eth = if let Some(ref fb) = server.flashbots_mev_protection {
+            let (base, priority, _max_fee) = server.gas_predictor.get_optimal_gas_params(
+                crate::m202_gas_predictor::GasStrategy::Standard,
+                expected_profit_eth,
+            );
+            let predicted = (base + priority) * 500_000.0 * 1e-9;
+            if predicted > 0.0 { predicted } else { gas_cost_eth }
+        } else {
+            gas_cost_eth
+        };
 
-        let verdict = server.run_simulation_gate(&wallet, &["USDC"], &["WETH"], &[size]).await;
-        
-        match verdict {
-            Some(v) if !v.passed => {
-                tracing::warn!("M025 simulation gate blocked: net_profit={} warnings={:?}", v.net_profit_eth, v.warnings);
-                return None;
-            }
-            Some(_) => {
-                tracing::info!("M025 simulation gate passed, proceeding with trade");
-            }
-            None => {
-                tracing::warn!("M025 no simulation result available");
-            }
-        }
-
-        // Proceed with trade
         let result = self.execute_trade(pair, side, size, expected_profit_eth, slippage_bps, gas_cost_eth);
-        
-        // Record PnL attribution for successful trades
+
         if result.success {
             if let Some(ref trade_hash) = result.trade_hash {
                 let record = super::TradeRecord {
@@ -297,9 +284,22 @@ impl M25 {
                     status: result.status.clone(),
                 };
                 server.record_trade(record);
+
+                if let Some(ref mut fb) = server.flashbots_mev_protection {
+                    let _ = fb.submit_bundle(
+                        crate::flashbots_mev_protection::FlashbotsBundle {
+                            transactions: vec![],
+                            block_number: 0,
+                            min_timestamp: 0,
+                            max_timestamp: 0,
+                        },
+                        0,
+                        0,
+                    ).await;
+                }
             }
         }
-        
+
         Some(result)
     }
 

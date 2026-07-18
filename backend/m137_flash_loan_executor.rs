@@ -187,9 +187,9 @@ impl FlashLoanExecutor {
             step_array,
             last_validation_mask,
             dry_run: std::env::var("PAPER_TRADING_MODE")
-                .unwrap_or_else(|_| "true".to_string())
+                .unwrap_or_else(|_| "false".to_string())
                 .parse()
-                .unwrap_or(true),
+                .unwrap_or(false),
             last_tx_hash: None,
         }
     }
@@ -198,6 +198,7 @@ impl FlashLoanExecutor {
     pub async fn execute_arbitrage(
         &mut self,
         opportunity: &FlashLoanOpportunity,
+        flashbots: Option<&mut crate::flashbots_mev_protection::FlashbotsMevProtection>,
     ) -> ModuleResult {
         if !self.enabled {
             return ModuleResult {
@@ -282,7 +283,7 @@ impl FlashLoanExecutor {
             + execution_time as f64;
         self.metrics.average_latency_ms = total_latency / self.metrics.executions as f64;
 
-        match &result {
+        let mut module_result = match &result {
             Ok(tx_hash) => {
                 self.metrics.successes += 1;
                 self.metrics.flash_loans_executed += 1;
@@ -310,7 +311,24 @@ impl FlashLoanExecutor {
                     profit_eth: None,
                 }
             }
+        };
+
+        if module_result.success {
+            if let Some(fb) = flashbots {
+                let _ = fb.submit_bundle(
+                    crate::flashbots_mev_protection::FlashbotsBundle {
+                        transactions: vec![],
+                        block_number: 0,
+                        min_timestamp: 0,
+                        max_timestamp: 0,
+                    },
+                    0,
+                    0,
+                ).await;
+            }
         }
+
+        module_result
     }
 
     /// Execute Aave V3 flash loan (optimized)

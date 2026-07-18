@@ -120,6 +120,10 @@ impl RpcConsensus {
         guard.clone()
     }
 
+    pub fn primary_rpc_url(&self) -> &str {
+        &self.primary_rpc
+    }
+
     async fn fetch_state_proof(&self, rpc_url: &str, chain_id: u64) -> Result<(Option<StateProof>, u64), String> {
         let start = Instant::now();
         let body = serde_json::json!({

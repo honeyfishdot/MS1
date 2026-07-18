@@ -663,44 +663,61 @@ pub struct AI017ComplianceChecker {
     pub enabled: bool, 
     pub violations: u64,
     pub last_audit: String,
-    pub mica_ok: bool,
-    pub soc2_ok: bool,
-    pub gdpr_ok: bool,
-    pub aml_ok: bool,
 }
+
 impl AI017ComplianceChecker { 
     pub fn new() -> Self { 
         Self { 
             enabled: true,
             violations: 0,
             last_audit: String::new(),
-            mica_ok: true,
-            soc2_ok: true,
-            gdpr_ok: true,
-            aml_ok: true,
         }
     } 
     pub fn set_enabled(&mut self, e: bool) { self.enabled = e; } 
     pub fn is_enabled(&self) -> bool { self.enabled }
     
+    fn check_mica(&self) -> bool {
+        std::env::var("MICA_COMPLIANCE_ENABLED").map(|v| v == "true").unwrap_or(false)
+            && std::env::var("MICA_LICENSE_ID").ok().filter(|v| !v.is_empty()).is_some()
+    }
+    
+    fn check_soc2(&self) -> bool {
+        std::env::var("SOC2_AUDIT_ENABLED").map(|v| v == "true").unwrap_or(false)
+            && std::env::var("SOC2_REPORT_URL").ok().filter(|v| !v.is_empty()).is_some()
+    }
+    
+    fn check_gdpr(&self) -> bool {
+        std::env::var("GDPR_DATA_RETENTION_DAYS").ok().filter(|v| !v.is_empty()).is_some()
+            && std::env::var("GDPR_DPO_CONTACT").ok().filter(|v| !v.is_empty()).is_some()
+    }
+    
+    fn check_aml_kyc(&self) -> bool {
+        std::env::var("REQUIRE_KYC").map(|v| v == "true").unwrap_or(false)
+            && std::env::var("KYC_VERIFIED_ADDRESSES").ok().filter(|v| !v.is_empty()).is_some()
+            && std::env::var("REQUIRE_AML").map(|v| v == "true").unwrap_or(false)
+            && std::env::var("AML_SCREENING_API_KEY").ok().filter(|v| !v.is_empty()).is_some()
+    }
+    
     pub fn run_compliance_check(&mut self) -> String {
         self.last_audit = chrono::Utc::now().to_rfc3339();
         let frameworks = vec![
-            ("MiCA", self.mica_ok),
-            ("SOC2", self.soc2_ok),
-            ("GDPR", self.gdpr_ok),
-            ("AML/KYC", self.aml_ok),
+            ("MiCA", self.check_mica()),
+            ("SOC2", self.check_soc2()),
+            ("GDPR", self.check_gdpr()),
+            ("AML/KYC", self.check_aml_kyc()),
         ];
         
         let mut results = Vec::new();
+        let mut violations = 0u64;
         for (name, ok) in frameworks {
             if !ok {
-                self.violations += 1;
+                violations += 1;
                 results.push(format!(r#""{}":"FAIL""#, name));
             } else {
                 results.push(format!(r#""{}":"PASS""#, name));
             }
         }
+        self.violations = violations;
         
         format!(r#"{{"timestamp":"{}","violations":{},"frameworks":"{}"}}"#,
             self.last_audit, self.violations, results.join(","))

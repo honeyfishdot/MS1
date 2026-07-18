@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/ReentrancyGuard.sol";
+import "../CircuitBreaker.sol";
 
 /**
  * @title AllBright FlashLoan Arbitrage Receiver
@@ -64,6 +65,7 @@ contract FlashLoanArbitrage is ReentrancyGuard {
     address public immutable UNISWAP_V2_ROUTER;
     address public immutable SUSHISWAP_ROUTER;
     uint256 public immutable MIN_PROFIT_THRESHOLD;
+    address public immutable CIRCUIT_BREAKER;
 
     // ── Tracking ───────────────────────────────────────────────────────────
     uint256 public totalTrades;
@@ -99,6 +101,11 @@ contract FlashLoanArbitrage is ReentrancyGuard {
         _;
     }
 
+    modifier onlyWhenNotHalted() {
+        if (CircuitBreaker(CIRCUIT_BREAKER).checkHalt()) revert Unauthorized();
+        _;
+    }
+
     // ── Constructor ────────────────────────────────────────────────────────
     constructor(
         address _owner,
@@ -108,7 +115,8 @@ contract FlashLoanArbitrage is ReentrancyGuard {
         address _balancerVault,
         address _uniswapV2Router,
         address _sushiswapRouter,
-        uint256 _minProfitThreshold
+        uint256 _minProfitThreshold,
+        address _circuitBreaker
     ) {
         OWNER = _owner;
         PROFIT_RECIPIENT = _profitRecipient;
@@ -118,6 +126,7 @@ contract FlashLoanArbitrage is ReentrancyGuard {
         UNISWAP_V2_ROUTER = _uniswapV2Router;
         SUSHISWAP_ROUTER = _sushiswapRouter;
         MIN_PROFIT_THRESHOLD = _minProfitThreshold;
+        CIRCUIT_BREAKER = _circuitBreaker;
         approvedCallers[_owner] = true;
     }
 
@@ -136,7 +145,7 @@ contract FlashLoanArbitrage is ReentrancyGuard {
         address token,
         uint256 amount,
         bytes calldata params
-    ) external onlyApproved {
+    ) external onlyApproved onlyWhenNotHalted {
         IAavePool(AAVE_POOL).flashLoanSimple(
             address(this),
             token,
@@ -151,7 +160,7 @@ contract FlashLoanArbitrage is ReentrancyGuard {
         address[] calldata tokens,
         uint256[] calldata amounts,
         bytes calldata userData
-    ) external onlyApproved {
+    ) external onlyApproved onlyWhenNotHalted {
         IBalancerVault(BALANCER_VAULT).flashLoan(
             address(this),
             tokens,
@@ -182,7 +191,7 @@ contract FlashLoanArbitrage is ReentrancyGuard {
         uint256 amount0Out,
         uint256 amount1Out,
         bytes calldata data
-    ) external onlyApproved {
+    ) external onlyApproved onlyWhenNotHalted {
         IUniswapV2Pair(pair).swap(amount0Out, amount1Out, address(this), data);
     }
 

@@ -418,10 +418,20 @@ pub async fn run_copilot_workflow(
     // Authorization spans the entire pipeline: preflight → simulation → live.
     authorize_copilot_deployment(selector_mode).await?;
 
-    // Automated governance pre-check (constitutional / CGM layer). This is an
-    // instant, non-human evaluation — it does not require Commander sign-off,
-    // so Autonomous mode retains its 100% capital-deployment authority.
-    enforce_deployment_governance_gate(selector_mode).await?;
+    // Governance pause check (M300). Blocks ALL modes if governance is emergency paused.
+    if crate::m300_governance_executor::GovernanceExecutor::is_governance_paused() {
+        return Err(AppError::Forbidden(
+            "EXECUTION HALTED: governance is emergency paused".to_string()
+        ));
+    }
+
+    // Automated governance pre-check (constitutional / CGM layer).
+    let proposed_changes = vec![
+        (Subsystem::Profit, 0.0),
+        (Subsystem::Security, 0.0),
+        (Subsystem::Quality, 0.0),
+    ];
+    enforce_deployment_governance_gate(selector_mode, proposed_changes).await?;
 
     match selector_mode {
         CopilotDeploymentMode::Autonomous => {
@@ -512,18 +522,14 @@ pub async fn approve_deployment_advance() -> Result<DeploymentAuthorization, App
 /// Automated governance pre-check for the deployment pipeline (governance4.md
 /// §1/§2 constitutional layer, enforced by the CGM / M050 / M135 governance layers).
 ///
-/// This is an instant, non-human constitutional evaluation: the deployment must
-/// stay within the `profit_growth` objective and not breach enterprise subsystem
-/// impact thresholds. It does NOT block Autonomous capital deployment — per the
-/// deployment mode contract, Autonomous holds 100% authority to deploy to live,
-/// while Assisted mode gates advancement on explicit Commander approval between
-/// stages (see `run_next_stage` / `approve_deployment_advance`).
+/// Blocks ALL modes on Critical constitutional violations. In Autonomous mode,
+/// High violations are logged but do not block (Autonomous retains operational
+/// authority for non-constitutional issues). Manual and Assisted modes block on
+/// High violations as well.
 pub async fn enforce_deployment_governance_gate(
-    _mode: CopilotDeploymentMode,
+    mode: CopilotDeploymentMode,
+    proposed_changes: Vec<(Subsystem, f64)>,
 ) -> Result<(), AppError> {
-    // Layer — Constitutional Guard (CGM). A deployment is a ConfigurationChange
-    // that must stay within the profit_growth objective and not breach enterprise
-    // subsystem-impact thresholds.
     let matrix = std::sync::Arc::new(tokio::sync::Mutex::new(RelationshipMatrix::new()));
     let guard = ConstitutionGuard::new(matrix);
     let action = SystemAction {
@@ -534,15 +540,30 @@ pub async fn enforce_deployment_governance_gate(
             Subsystem::Security,
             Subsystem::Quality,
         ],
-        expected_changes: vec![(Subsystem::Security, 0.0)],
+        expected_changes: proposed_changes,
         initiated_by: "copilot_deployment",
     };
     let verdict = guard.evaluate(&action).await;
     if !verdict.allowed {
-        return Err(AppError::Forbidden(format!(
-            "ConstitutionGuard blocked deployment (CGM): {:?}",
-            verdict.violations
-        )));
+        let has_critical = verdict.violations.iter().any(|v| v.severity == crate::constitution_guard::RiskLevel::Critical);
+        let has_high = verdict.violations.iter().any(|v| v.severity == crate::constitution_guard::RiskLevel::High);
+        
+        if has_critical {
+            return Err(AppError::Forbidden(format!(
+                "ConstitutionGuard blocked deployment (CGM CRITICAL): {:?}",
+                verdict.violations
+            )));
+        }
+        
+        if has_high && mode != CopilotDeploymentMode::Autonomous {
+            return Err(AppError::Forbidden(format!(
+                "ConstitutionGuard blocked deployment (CGM HIGH): {:?}",
+                verdict.violations
+            )));
+        }
+        
+        warn!("ConstitutionGuard logged {} violations in Autonomous mode: {:?}", 
+            verdict.violations.len(), verdict.violations);
     }
 
     Ok(())

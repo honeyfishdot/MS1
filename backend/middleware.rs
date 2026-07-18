@@ -89,9 +89,8 @@ pub fn build_cors(allowed_origins: &[String]) -> CorsLayer {
         .collect();
 
     if origins.is_empty() {
-        warn!("No valid CORS origins configured; using permissive fallback");
+        warn!("No CORS origins configured; denying all cross-origin requests");
         CorsLayer::new()
-            .allow_origin(axum::http::HeaderValue::from_static("*"))
             .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
             .allow_headers([
                 axum::http::header::CONTENT_TYPE,
@@ -99,9 +98,9 @@ pub fn build_cors(allowed_origins: &[String]) -> CorsLayer {
                 axum::http::header::HeaderName::from_static("x-request-id"),
             ])
     } else {
-        let origin_header = origins.into_iter().next().unwrap_or_else(|| axum::http::HeaderValue::from_static("*"));
+        let origins = origins.into_iter().collect::<Vec<_>>();
         CorsLayer::new()
-            .allow_origin(origin_header)
+            .allow_origin(origins)
             .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
             .allow_headers([
                 axum::http::header::CONTENT_TYPE,

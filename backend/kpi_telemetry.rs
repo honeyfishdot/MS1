@@ -143,6 +143,7 @@ pub struct EstimationContext {
     pub gas_price_gwei: f64,
     pub pool_liquidity_usd: f64,
     pub regime: MarketRegime,
+    pub flash_loan_utilization: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -207,9 +208,7 @@ impl BaselineEstimator for ShieldBaselineEstimator {
 
 impl BaselineEstimator for EfficiencyBaselineEstimator {
     fn estimate(&self, ctx: &EstimationContext) -> f64 {
-        // Efficiency pillar baseline: gas and execution efficiency
-        // Formula: base_efficiency * gas_optimization * network_factor
-        let base_efficiency = 0.92; // 92% baseline
+        let base_efficiency = ctx.flash_loan_utilization.max(0.0).min(1.0);
         let gas_optimization = 1.0 - (ctx.gas_price_gwei / 100.0).min(0.3);
         let network_factor = 1.0 - (ctx.network_congestion * 0.1);
         base_efficiency * gas_optimization * network_factor

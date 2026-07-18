@@ -7,9 +7,27 @@ import express from "express";
 import path from "path";
 import * as fs from "fs";
 import cors from "cors";
+import * as crypto from "crypto";
 
 const app = express();
-app.use(cors({ origin: true, credentials: true }));
+
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:3002,http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim());
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  })
+);
+app.use("/api", authMiddleware);
 app.use(express.json());
 
 const PORT = parseInt(process.env.PORT || "3002");
@@ -26,7 +44,39 @@ function normalizeBackendUrl(raw: string): string {
 }
 
 const BACKEND_URL = normalizeBackendUrl(process.env.RUST_BACKEND_URL || "http://localhost:3001");
-const API_KEY = process.env.RUST_API_KEY || "default-api-key-change-me";
+const API_KEY = process.env.RUST_API_KEY;
+if (!API_KEY) {
+  console.warn("⚠️  RUST_API_KEY is not set — backend requests will fail authentication");
+}
+
+function verifyJwt(token: string): boolean {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    const [headerB64, payloadB64, signatureB64] = parts;
+    const signingInput = `${headerB64}.${payloadB64}`;
+    const secret = process.env.JWT_SECRET;
+    if (!secret) return false;
+    const expected = crypto.createHmac("sha256", secret).update(signingInput).digest("base64url");
+    const provided = signatureB64.replace(/-/g, "+").replace(/_/g, "/");
+    const expectedPadded = expected.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expectedPadded));
+  } catch {
+    return false;
+  }
+}
+
+function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Missing Bearer token" });
+  }
+  const token = authHeader.slice(7);
+  if (!verifyJwt(token)) {
+    return res.status(403).json({ error: "Invalid token" });
+  }
+  next();
+}
 
 async function proxyRequest(req: express.Request, res: express.Response, backendPath: string) {
   try {
