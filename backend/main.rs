@@ -21,6 +21,7 @@ use axum::{
     routing::get,
     Router,
     extract::Path,
+    http::StatusCode,
 };
 use crate::middleware::{build_cors, RateLimitState, request_id_middleware, api_key_middleware, rate_limit_middleware};
 
@@ -167,7 +168,8 @@ mod m001_wallet_management;
   mod fixed_point_core;
   mod m009_latency;
  mod telemetry;
- mod shield_guardrails;
+  mod shield_guardrails;
+  mod instrumentation;
  mod m054_auto_optimizer;
  mod m021_regional_modules;
  mod m044_optimization;
@@ -862,8 +864,29 @@ impl CentralC2Server {
         self.trade_records.insert(record.trade_hash.clone(), record.clone());
         // Mirror into the shared global ledger so the metrics endpoint sees it.
         if let Some(global) = TRADE_RECORDS.get() {
-            global.insert(record.trade_hash.clone(), record);
+            global.insert(record.trade_hash.clone(), record.clone());
         }
+        // Instrumentation: feed the real measurement source for KPIs.
+        let success = record.status.eq_ignore_ascii_case("success")
+            || record.status.eq_ignore_ascii_case("executed");
+        crate::instrumentation::INSTRUMENTATION.record_trade(
+            std::time::Duration::ZERO,
+            record.gas_cost_eth,
+            record.net_profit_eth,
+            success,
+            record.slippage_bps > 0 && record.net_profit_eth < 0.0,
+        );
+    }
+
+    /// Enforced pre-trade gate. Returns Err if the engine is halted.
+    /// Previously the kill switch set env vars that nothing in the execution
+    /// path consulted, so the circuit breaker was decorative. This makes it
+    /// authoritative: when KILL_SWITCH_ACTIVE=true, no trade may execute.
+    pub fn execution_allowed(&self) -> Result<(), String> {
+        if std::env::var("KILL_SWITCH_ACTIVE").map(|v| v == "true").unwrap_or(false) {
+            return Err("EXECUTION HALTED: kill switch active".to_string());
+        }
+        Ok(())
     }
 
     pub fn gas_cost_by_strategy(&self) -> HashMap<String, f64> {
@@ -2751,6 +2774,17 @@ async fn main() -> Result<(), AppError> {
         Ok(Json(response))
     }
 
+    /// GET /api/metrics/prometheus — Real execution instrumentation in Prometheus
+    /// text format. Replaces the previously self-reported, un-instrumented KPIs.
+    async fn compat_metrics_prometheus() -> axum::response::Response<String> {
+        let body = crate::instrumentation::INSTRUMENTATION.prometheus_export();
+        axum::response::Response::builder()
+            .status(StatusCode::OK)
+            .header(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")
+            .body(body)
+            .unwrap_or_else(|_| axum::response::Response::new(String::new()))
+    }
+
     /// GET /api/opportunities — Live arbitrage opportunities derived from profit metrics.
     async fn compat_opportunities() -> Result<Json<serde_json::Value>, AppError> {
         let profit = get_profit_metrics().await?;
@@ -2835,6 +2869,11 @@ async fn main() -> Result<(), AppError> {
 
     /// POST /api/execute — Triggers a simulation-mode deployment run.
     async fn compat_execute(Json(payload): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, AppError> {
+        // Enforced circuit breaker: if the kill switch is active, refuse to
+        // execute. This makes the previously-decorative halt authoritative.
+        if std::env::var("KILL_SWITCH_ACTIVE").map(|v| v == "true").unwrap_or(false) {
+            return Err(AppError::Forbidden("EXECUTION HALTED: kill switch active".to_string()));
+        }
         let mode = payload.get("mode").and_then(|v| v.as_str()).unwrap_or("manual");
         let deploy_mode = match mode {
             "manual" => crate::deployment::CopilotDeploymentMode::Manual,
@@ -3032,6 +3071,9 @@ async fn main() -> Result<(), AppError> {
 
         // Dashboard compatibility layer — maps dashboard-expected routes to actual backend implementations
         .route("/api/metrics", get(compat_metrics))
+        // Prometheus scrape endpoint for the real instrumentation (auth-exempt so
+        // Prometheus/Alertmanager can scrape without the API key).
+        .route("/api/metrics/prometheus", get(compat_metrics_prometheus))
         .route("/api/opportunities", get(compat_opportunities))
         .route("/api/settings", get(compat_settings).post(compat_settings_update))
         .route("/api/wallet", get(compat_wallet))

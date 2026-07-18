@@ -155,9 +155,23 @@ These are **NOT active now** (currently only in local `.env`). Set them on the
 
 ## 8. Open Items Before Mainnet (from verified KPIs)
 
+**P0 — DONE (2026-07-18):**
+- ✅ **Real instrumentation**: new `backend/instrumentation.rs` (std-atomics, no new
+  deps) records trades, P50/P95/P99 latency, gas, net profit, success rate, MEV rate,
+  consecutive losses, daily loss. Exposed at `GET /api/metrics/prometheus` (Prometheus
+  text format) so the existing Prometheus/Alertmanager stack can scrape + alert.
+- ✅ **Enforced circuit breaker**: `/api/system/kill` (kill switch) now halts execution
+  authoritatively — `compat_execute` refuses with 403 "EXECUTION HALTED" when
+  `KILL_SWITCH_ACTIVE=true`. Previously the switch set env vars nothing consulted.
+- ✅ `record_trade` feeds the instrumentation source; `execution_allowed()` gate added.
+
+**Still open:**
 - Gas costs 133% over target → enable **M202 Gas Predictor**.
 - P99 latency 170% over target → private RPC (Flashbots relay).
 - Capital efficiency 0.92 vs 0.95 → raise flash-loan utilization (78%).
 - Security (deferred): JWT on endpoints, CORS restricted to dashboard origin,
-  CircuitBreaker.sol wiring, Alertmanager config.
+  `CircuitBreaker.sol` (Solidity) wiring, Alertmanager config.
 - Regulatory: KYC/AML, GDPR review, smart-contract external audit.
+- **Secrets**: startup chaos test flagged `credential_exposure_scan` FAILURE
+  (DATABASE_URL, OPENAI_API_KEY, DASHBOARD_PASS present in env). Rotate + keep only in
+  Render env vars; remove the live key from root `.env`.

@@ -82,6 +82,10 @@ app.get("/api/metrics", (req, res) => {
   proxyRequest(req, res, "/api/metrics");
 });
 
+app.get("/api/metrics/prometheus", (req, res) => {
+  proxyRequest(req, res, "/api/metrics/prometheus");
+});
+
 app.get("/api/opportunities", (req, res) => {
   proxyRequest(req, res, "/api/opportunities");
 });
