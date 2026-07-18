@@ -11,7 +11,7 @@ RUN apk add --no-cache \
 WORKDIR /app
 
 COPY apps/dashboard/package*.json ./
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 COPY apps/dashboard/ .
 RUN npm run build
@@ -22,7 +22,7 @@ WORKDIR /app
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package*.json ./
-RUN npm ci --only=production --legacy-peer-deps
+RUN npm install --legacy-peer-deps --only=production
 
 EXPOSE 80
 
