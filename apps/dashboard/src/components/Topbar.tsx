@@ -139,6 +139,12 @@ export default function Topbar({
             <option value="ADA" className={styles.optionClass}>ADA (₳)</option>
             <option value="DOGE" className={styles.optionClass}>DOGE (Ð)</option>
             <option value="LINK" className={styles.optionClass}>LINK</option>
+            <option value="DOT" className={styles.optionClass}>DOT</option>
+            <option value="SHIB" className={styles.optionClass}>SHIB</option>
+            <option value="MATIC" className={styles.optionClass}>MATIC</option>
+            <option value="UNI" className={styles.optionClass}>UNI</option>
+            <option value="AAVE" className={styles.optionClass}>AAVE</option>
+            <option value="AVAX" className={styles.optionClass}>AVAX</option>
           </select>
         </div>
 

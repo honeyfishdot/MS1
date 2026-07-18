@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 const API_BASE = import.meta.env.VITE_API_BASE || '';
-import { Gauge, SlidersHorizontal, Target, Sparkles, Zap, ShieldAlert, Activity, Anchor, Cpu, Layers, Upload, Trash2, Edit2, Plus, Check, X, GitBranch, FileCode, FileCheck2, AlertCircle } from 'lucide-react';
+import { Gauge, SlidersHorizontal, Target, Sparkles, Zap, ShieldAlert, Activity, Anchor, Cpu, Layers } from 'lucide-react';
 import { DashboardSettings } from '../types';
 
 interface CommanderViewProps {
@@ -13,11 +13,6 @@ interface CommanderViewProps {
   onUpdateSettings: (updated: Partial<DashboardSettings>) => Promise<boolean>;
   convertAndFormat: (usdValue: number, minimumFractionDigits?: number) => string;
   themeMode: 'dark' | 'bright' | 'dusty-blue';
-}
-
-interface EnvConfigItem {
-  key: string;
-  value: string;
 }
 
 export default function CommanderView({ settings, onUpdateSettings, convertAndFormat, themeMode }: CommanderViewProps) {
@@ -31,139 +26,8 @@ export default function CommanderView({ settings, onUpdateSettings, convertAndFo
   const [simRunning, setSimRunning] = useState(false);
   const [awaitingApproval, setAwaitingApproval] = useState(false);
   const [pendingStage, setPendingStage] = useState<string | null>(null);
-  const [envConfigExpanded, setEnvConfigExpanded] = useState(true);
-  const [configRowCount, setConfigRowCount] = useState<number>(0);
-  const [envConfigs, setEnvConfigs] = useState<EnvConfigItem[]>(() => {
-    const saved = localStorage.getItem('allbright_env_config');
-    if (saved) { try { return JSON.parse(saved); } catch (e) {} }
-    return [
-      { key: 'RPC_PROVIDER_URL', value: 'https://arb-mainnet.g.allbright.io/v3/api' },
-      { key: 'FLASHBOTS_RPC_URL', value: 'https://relay.flashbots.net' },
-      { key: 'MIN_PROFIT_THRESHOLD_USDC', value: '150' },
-      { key: 'SLIPPAGE_TOLERANCE_BPS', value: '50' },
-    ];
-  });
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editingKey, setEditingKey] = useState('');
-  const [editingValue, setEditingValue] = useState('');
-  const [isDragging, setIsDragging] = useState(false);
-  const [autoSaveMsg, setAutoSaveMsg] = useState('');
-  const [validationErrors, setValidationErrors] = useState<Record<number, string>>({});
 
   const formatCurrency = (val: number, minimumFractionDigits = 2) => convertAndFormat(val, minimumFractionDigits);
-
-  useEffect(() => { setConfigRowCount(envConfigs.length); }, [envConfigs]);
-
-  const parseEnvContent = (text: string): { items: EnvConfigItem[]; errors: string[] } => {
-    const lines = text.split('\n');
-    const parsed: EnvConfigItem[] = [];
-    const errors: string[] = [];
-    let lineNum = 0;
-    lines.forEach((line) => {
-      lineNum++;
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) return;
-      const index = trimmed.indexOf('=');
-      if (index <= 0) { errors.push(`Line ${lineNum}: Invalid format (missing '=')`); return; }
-      const key = trimmed.substring(0, index).trim();
-      const value = trimmed.substring(index + 1).trim();
-      const cleanValue = value.replace(/^['"]|['"]$/g, '');
-      if (!key) { errors.push(`Line ${lineNum}: Empty variable name`); return; }
-      if (!/^[A-Z_][A-Z0-9_]*$/i.test(key)) { errors.push(`Line ${lineNum}: Invalid key "${key}"`); return; }
-      if ((key.includes('PRIVATE_KEY') || key.includes('SECRET') || key.includes('PASSWORD')) && cleanValue.length < 10) { errors.push(`Line ${lineNum}: ${key} appears too short`); return; }
-      parsed.push({ key, value: cleanValue });
-    });
-    return { items: parsed, errors };
-  };
-
-  const triggerAutoSaveFeedback = (message: string) => { setAutoSaveMsg(message); setTimeout(() => setAutoSaveMsg(''), 4000); };
-  const saveConfigs = (newConfigs: EnvConfigItem[]) => { setEnvConfigs(newConfigs); localStorage.setItem('allbright_env_config', JSON.stringify(newConfigs)); triggerAutoSaveFeedback('Config auto-saved locally'); };
-  const handleAddNewRow = () => { const newConfigs = [...envConfigs, { key: 'NEW_VARIABLE', value: 'Value' }]; const targetIdx = newConfigs.length - 1; setEnvConfigs(newConfigs); setEditingIndex(targetIdx); setEditingKey('NEW_VARIABLE'); setEditingValue('Value'); localStorage.setItem('allbright_env_config', JSON.stringify(newConfigs)); triggerAutoSaveFeedback('Row added'); };
-  const validateRow = (key: string, value: string): string | null => {
-    if (!key.trim()) return 'Key cannot be empty';
-    if (!/^[A-Z_][A-Z0-9_]*$/i.test(key.trim())) return 'Invalid key format (uppercase, digits, underscore only)';
-    if ((key.includes('PRIVATE_KEY') || key.includes('SECRET') || key.includes('PASSWORD')) && value.length < 10) {
-      return 'Secret value appears too short (min 10 chars)';
-    }
-    return null;
-  };
-
-  const handleStartEdit = (idx: number, item: EnvConfigItem) => {
-    setEditingIndex(idx);
-    setEditingKey(item.key);
-    setEditingValue(item.value);
-    // Clear any existing validation error for this row
-    setValidationErrors(prev => {
-      const next = { ...prev };
-      delete next[idx];
-      return next;
-    });
-  };
-  const handleCancelEdit = () => { setEditingIndex(null); };
-  const handleDeleteRow = (idx: number) => { const updated = envConfigs.filter((_, i) => i !== idx); if (editingIndex === idx) setEditingIndex(null); else if (editingIndex !== null && editingIndex > idx) setEditingIndex(editingIndex - 1); saveConfigs(updated); };
-
-const handleSaveEdit = (idx: number) => {
-  // Get validation error for this specific row
-  const rowError = validationErrors[idx];
-  if (rowError) {
-    alert(`Validation error: ${rowError}`);
-    return;
-  }
-  if (!editingKey.trim()) { alert('Key cannot be empty.'); return; }
-  if (!/^[A-Z_][A-Z0-9_]*$/i.test(editingKey.trim())) { alert(`Invalid key "${editingKey}" — must be uppercase letters, digits, and underscores only.`); return; }
-  const updated = [...envConfigs];
-  updated[idx] = { key: editingKey.trim(), value: editingValue };
-  setEditingIndex(null);
-  saveConfigs(updated);
-  triggerAutoSaveFeedback('Variable updated');
-};
-
-const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    const text = event.target?.result as string; if (!text) return;
-    const { items, errors } = parseEnvContent(text);
-    // Build validation errors map from parsed errors
-    const newValidationErrors: Record<number, string> = {};
-    if (errors.length > 0) {
-      errors.forEach((err, i) => {
-        const lineMatch = err.match(/Line (\d+)/);
-        if (lineMatch) {
-          newValidationErrors[parseInt(lineMatch[1]) - 1] = err;
-        }
-      });
-    }
-    setValidationErrors(newValidationErrors);
-    if (items.length > 0) {
-      const merged = [...envConfigs];
-      items.forEach(item => { const existingIdx = merged.findIndex(c => c.key === item.key); if (existingIdx >= 0) merged[existingIdx].value = item.value; else merged.push(item); });
-      saveConfigs(merged);
-      triggerAutoSaveFeedback(`Imported ${items.length} variables (${errors.length} errors)`);
-    } else if (errors.length === 0) { alert('No valid env format keys found. (Format: KEY=VALUE)'); }
-  };
-  reader.readAsText(file);
-};
-
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
-  const handleDragLeave = () => { setIsDragging(false); };
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault(); setIsDragging(false);
-    const file = e.dataTransfer.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string; if (!text) return;
-      const { items, errors } = parseEnvContent(text);
-      if (errors.length > 0) alert('⚠️ .env Validation Errors:\n\n' + errors.join('\n'));
-      if (items.length > 0) {
-        const merged = [...envConfigs];
-        items.forEach(item => { const existingIdx = merged.findIndex(c => c.key === item.key); if (existingIdx >= 0) merged[existingIdx].value = item.value; else merged.push(item); });
-        saveConfigs(merged);
-        triggerAutoSaveFeedback(`Imported ${items.length} variables (${errors.length} errors)`);
-      }
-    };
-    reader.readAsText(file);
-  };
 
   const getThemeStyles = () => {
     switch (themeMode) {
@@ -211,61 +75,8 @@ const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/10 pb-4">
         <div>
           <div className="flex items-center space-x-2.5"><div className="p-2 bg-teal-500/15 rounded-xl text-teal-400 border border-teal-500/30"><SlidersHorizontal className="h-5 w-5" /></div><h1 className={`text-xl font-sans font-extrabold tracking-tight ${styles.textWhite}`}>Command Console</h1></div>
-          <p className={`text-xs ${styles.textMuted} mt-1 max-w-3xl`}>Configure automated execution parameters, target metrics, and custom environment pipelines. Change parameters to <strong className="text-teal-400 font-semibold">Auto</strong> to hand control to the local compiler.</p>
+          <p className={`text-xs ${styles.textMuted} mt-1 max-w-3xl`}>Configure automated execution parameters and target metrics.</p>
         </div>
-      </div>
-
-      <div className={styles.card} id="env-config-panel">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/15 pb-4 mb-4">
-          <div className="flex items-center space-x-2">
-            <button onClick={() => setEnvConfigExpanded(!envConfigExpanded)} className="p-1 hover:bg-slate-800/30 rounded-lg transition-all cursor-pointer" title={envConfigExpanded ? "Collapse Config Table" : "Expand Config Table"}><FileCode className="h-5 w-5 text-teal-400" /></button>
-            <div>
-              <div className="flex items-center gap-2"><h2 className={`text-sm font-bold ${styles.textWhite}`}>System Variable Config Table</h2><button onClick={() => setEnvConfigExpanded(!envConfigExpanded)} className={`text-[9px] font-mono px-2 py-0.5 rounded border transition-all cursor-pointer ${envConfigExpanded ? 'bg-teal-500/10 text-teal-400 border-teal-500/20' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>{envConfigExpanded ? `Collapse ▲ (${configRowCount})` : `Expand ▼ (${configRowCount})`}</button></div>
-              <p className={`text-[10px] ${styles.textMuted} mt-0.5`}>Drag & drop or select an <code>.env</code> file to auto-populate the runtime variables below.</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-3 shrink-0">
-            {autoSaveMsg && (<span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 animate-pulse">{autoSaveMsg}</span>)}
-            <label className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${styles.btnSecondary}`}><Upload className="h-3.5 w-3.5" /><span>Upload .env File</span><input type="file" accept=".env,text/plain" onChange={handleFileUpload} className="hidden" /></label>
-          </div>
-        </div>
-
-        {envConfigExpanded && (
-          <>
-            <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} className={`p-4 rounded-xl text-center cursor-pointer transition-all mb-4 ${styles.dropzone} ${isDragging ? 'border-teal-400 bg-teal-500/5' : ''}`}>
-              <div className="flex flex-col items-center justify-center space-y-1"><FileCheck2 className={`h-6 w-6 ${isDragging ? 'text-teal-400 animate-bounce' : 'text-slate-550'}`} /><p className="text-[11px] text-slate-400">Drag and drop your local <code>.env</code> configuration file here to synchronize instantly.</p></div>
-            </div>
-            <div className={styles.tableBg}>
-              <table className="w-full text-left text-xs border-collapse font-mono">
-                <thead><tr className={styles.tableHeader}><th className="py-2 px-4 w-12 text-center border-r border-slate-800/10">#</th><th className="py-2 px-4 w-1/3">Placeholder Key</th><th className="py-2 px-4 w-1/2">Configuration Value</th><th className="py-2 px-4 text-center">Actions</th></tr></thead>
-                <tbody>
-                  {envConfigs.map((item, idx) => {
-                    const isEditing = editingIndex === idx;
-                    return (
-                      <tr key={idx} className={styles.tableRow}>
-                        <td className="py-2 px-4 text-center text-slate-500 border-r border-slate-800/10 font-bold text-[10px]">{idx + 1}</td>
-                        <td className="py-2 px-4 font-bold text-slate-300">
-                          {isEditing ? (<input type="text" value={editingKey} onChange={(e) => { setEditingKey(e.target.value); const err = validateRow(e.target.value, editingValue); setValidationErrors(prev => ({ ...prev, [idx]: err || undefined })); }} className={`w-full font-mono text-xs px-2 py-1 rounded bg-slate-950 border ${validationErrors[idx] ? 'border-rose-500 text-rose-300' : 'border-slate-800 text-teal-300'} focus:outline-none`} />) : (<span className="truncate block max-w-[220px]" title={item.key}>{item.key}</span>)}
-                          {validationErrors[idx] && (<span className="text-[9px] text-rose-400 font-mono block mt-0.5">{validationErrors[idx]}</span>)}
-                        </td>
-                        <td className="py-2 px-4 text-slate-400">
-                          {isEditing ? (<input type="text" value={editingValue} onChange={(e) => { setEditingValue(e.target.value); const err = validateRow(editingKey, e.target.value); setValidationErrors(prev => ({ ...prev, [idx]: err || undefined })); }} className={`w-full font-mono text-xs px-2 py-1 rounded bg-slate-950 border ${validationErrors[idx] ? 'border-rose-500 text-rose-300' : 'border-slate-800 text-slate-100'} focus:outline-none`} />) : (<span className="truncate block max-w-[400px]" title={item.value}>{item.key.includes('PRIVATE_KEY') || item.key.includes('SECRET') || item.key.includes('PASSWORD') ? '••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••' : item.value}</span>)}
-                          {validationErrors[idx] && (<span className="text-[9px] text-rose-400 font-mono block mt-0.5">{validationErrors[idx]}</span>)}
-                        </td>
-                        <td className="py-2 px-4 text-center">
-                          <div className="flex items-center justify-center space-x-2">
-                            {isEditing ? (<><button onClick={() => handleSaveEdit(idx)} className="p-1 rounded hover:bg-emerald-500/10 text-emerald-400 transition-all cursor-pointer" title="Save Changes"><Check className="h-3.5 w-3.5" /></button><button onClick={handleCancelEdit} className="p-1 rounded hover:bg-rose-500/10 text-rose-400 transition-all cursor-pointer" title="Cancel Edit"><X className="h-3.5 w-3.5" /></button></>) : (<><button onClick={() => handleStartEdit(idx, item)} className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-all cursor-pointer" title="Edit Variable"><Edit2 className="h-3.5 w-3.5" /></button><button onClick={() => handleDeleteRow(idx)} className="p-1 rounded hover:bg-rose-500/10 text-rose-400 transition-all cursor-pointer" title="Delete Variable"><Trash2 className="h-3.5 w-3.5" /></button></>)}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  <tr className="bg-slate-950/10"><td colSpan={4} className="py-2 px-4 text-center"><button onClick={handleAddNewRow} className="inline-flex items-center space-x-1.5 text-[11px] font-bold text-teal-400 hover:text-teal-300 transition-all py-1 px-3 rounded hover:bg-teal-500/5 cursor-pointer border border-teal-500/15"><Plus className="h-3.5 w-3.5" /><span>Add New Configuration Variable</span></button></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
       </div>
 
       <div className={`${styles.card} border-teal-500/15 bg-slate-900/10 backdrop-blur-md relative overflow-hidden`} id="commander-control-room">

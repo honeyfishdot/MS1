@@ -102,11 +102,13 @@ export default function App() {
   const currencyRates: { [key: string]: number } = {
     USD: 1, USDT: 1, BTC: 91850, ETH: 3420.5, SOL: 145, BNB: 580,
     XRP: 0.60, ADA: 0.38, DOGE: 0.12, SHIB: 0.000018, LINK: 18.75, DOT: 6.20,
+    MATIC: 0.25, UNI: 6.50, AAVE: 92.00, AVAX: 18.50,
   };
 
   const currencySymbols: { [key: string]: string } = {
     USD: '$', USDT: '₮', BTC: '₿', ETH: 'Ξ', SOL: '◎', BNB: 'BNB',
     XRP: 'XRP', ADA: '₳', DOGE: 'Ð', SHIB: 'SHIB', LINK: '⬡', DOT: 'DOT',
+    MATIC: 'MATIC', UNI: 'UNI', AAVE: 'AAVE', AVAX: 'AVAX',
   };
 
   const convertAndFormat = (usdValue: number, minFractionDigits = 2) => {
