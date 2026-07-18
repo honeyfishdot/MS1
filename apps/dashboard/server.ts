@@ -13,7 +13,19 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 const PORT = parseInt(process.env.PORT || "3002");
-const BACKEND_URL = process.env.RUST_BACKEND_URL || "http://localhost:3001";
+
+// Normalize the backend URL: Render's `hostport`/`host` service properties may
+// omit the scheme (e.g. "allbright-backend.onrender.com:443"). new URL() needs
+// a scheme, so default to https:// when one is not provided.
+function normalizeBackendUrl(raw: string): string {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) return "http://localhost:3001";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  // If it looks like host:443 assume https, otherwise https by default in prod.
+  return `https://${trimmed}`;
+}
+
+const BACKEND_URL = normalizeBackendUrl(process.env.RUST_BACKEND_URL || "http://localhost:3001");
 const API_KEY = process.env.RUST_API_KEY || "default-api-key-change-me";
 
 async function proxyRequest(req: express.Request, res: express.Response, backendPath: string) {

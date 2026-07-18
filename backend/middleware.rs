@@ -46,6 +46,13 @@ pub async fn api_key_middleware(
     next: Next,
 ) -> Result<Response, StatusCode>
 {
+    // Health/readiness probes must be reachable without an API key so that
+    // platform health checks (Render, Kubernetes, load balancers) succeed.
+    let path = req.uri().path();
+    if path == "/healthz" || path == "/readyz" {
+        return Ok(next.run(req).await);
+    }
+
     let api_key_header = req
         .headers()
         .get("x-api-key")

@@ -1,21 +1,31 @@
+# Render Blueprint — AllBright
+# Two web services (Rust backend + React dashboard) plus Redis and Postgres.
+# The dashboard proxies /api/* to the backend using RUST_BACKEND_URL.
+
 services:
   # ============================================================================
-  # Rust Backend Service
+  # Rust Backend Service (HTTP API + gRPC)
+  # Binds to Render's $PORT automatically (main.rs prefers PORT env var).
+  # /healthz and /readyz are exempt from the API key middleware.
   # ============================================================================
   - type: web
     name: allbright-backend
     runtime: docker
     plan: starter
+    region: oregon
     branch: main
     dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
     healthCheckPath: /healthz
     envVars:
       - key: RUST_LOG
         value: info
       - key: PILOT_MODE
-        value: true
-      - key: HTTP_BIND_ADDR
-        value: 0.0.0.0:3001
+        value: "true"
+      # Shared secret between dashboard and backend. Generated once by Render,
+      # then referenced by the dashboard service below so both always match.
+      - key: API_KEY
+        generateValue: true
       - key: DATABASE_URL
         fromDatabase:
           name: allbright-db
@@ -25,6 +35,7 @@ services:
           name: allbright-redis
           type: redis
           property: connectionString
+      # Secrets — set these in the Render dashboard (sync:false keeps them out of git)
       - key: OPENROUTER_API_KEY
         sync: false
       - key: GROQ_API_KEY
@@ -33,29 +44,35 @@ services:
         sync: false
       - key: PRIVATE_KEY
         sync: false
-    disk:
-      name: backend-data
-      mountPath: /app/data
-      sizeGB: 1
 
   # ============================================================================
-  # React Dashboard Service
+  # React Dashboard Service (Express server proxies /api to the backend)
+  # Dockerfile lives at repo root; build context is the repo root.
   # ============================================================================
   - type: web
     name: allbright-dashboard
     runtime: docker
     plan: starter
+    region: oregon
     branch: main
-    dockerfilePath: ./apps/dashboard/Dockerfile
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /api/health
     envVars:
+      - key: NODE_ENV
+        value: production
+      # Full URL (scheme + host) is required by server.ts `new URL(path, BACKEND_URL)`.
       - key: RUST_BACKEND_URL
         fromService:
           type: web
           name: allbright-backend
-          property: host
-      - key: NODE_ENV
-        value: production
+          property: hostport
+      # Must equal the backend's API_KEY so x-api-key validation passes.
+      - key: RUST_API_KEY
+        fromService:
+          type: web
+          name: allbright-backend
+          envVarKey: API_KEY
 
   # ============================================================================
   # Redis Cache Service
@@ -65,15 +82,14 @@ services:
     plan: starter
     region: oregon
     maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
 
-  # ============================================================================
-  # PostgreSQL Database Service
-  # ============================================================================
-  - type: pserv
-    name: allbright-db
+# ============================================================================
+# PostgreSQL Database (Render managed)
+# ============================================================================
+databases:
+  - name: allbright-db
     plan: starter
+    region: oregon
     databaseName: allbright
     user: apxuser
-    region: oregon
-    disk:
-      sizeGB: 10
