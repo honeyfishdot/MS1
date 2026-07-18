@@ -6,11 +6,13 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import Sidebar from './components/Sidebar';
+import Header from './components/Header';
 import DashboardView from './components/DashboardView';
 import WalletView from './components/WalletView';
 import CommanderView from './components/CommanderView';
 import ComplianceView from './components/ComplianceView';
 import CopilotPanel from './components/CopilotPanel';
+import Footer from './components/Footer';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { 
   AggregatedMetrics, 
@@ -336,8 +338,8 @@ export default function App() {
   const getThemeBgClass = () => {
     switch (themeMode) {
       case 'bright': return 'bg-slate-100 text-slate-800';
-      case 'dusty-blue': return 'bg-[#131b27] text-slate-200';
-      default: return 'bg-slate-950 text-slate-100';
+      case 'dusty-blue': return 'bg-[#0f172a] text-slate-200';
+      default: return 'bg-[#020617] text-slate-100';
     }
   };
 
@@ -358,6 +360,10 @@ export default function App() {
   const effectiveSettings = (settings || defaultSettings) as DashboardSettings;
   const settingsWithLocalMode = { ...effectiveSettings, profitTransferMode: localProfitTransferMode };
 
+  const targetSet = settings?.profitTargetUsd || 0;
+  const totalNetProfit = metrics?.totalProfitUsd || 0;
+  const targetPct = targetSet > 0 ? Math.round((totalNetProfit / targetSet) * 100) : 0;
+
   return (
     <ErrorBoundary>
       <div className={`flex min-h-screen font-sans ${getThemeBgClass()}`} id="app-root-container">
@@ -374,8 +380,22 @@ export default function App() {
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        <Header
+          wallet={wallet || { totalValueUsd: 0 }}
+          themeMode={themeMode}
+          onThemeChange={setThemeMode}
+          copilotOpen={copilotOpen}
+          onToggleCopilot={() => setCopilotOpen(!copilotOpen)}
+          selectedCurrency={selectedCurrency}
+          onCurrencyChange={setSelectedCurrency}
+          convertAndFormat={convertAndFormat}
+          targetPct={targetPct}
+          targetGoalUsd={targetSet}
+          targetProfitUsd={totalNetProfit}
+        />
+
         <div className="flex-1 flex overflow-hidden min-h-0">
-          <main className="flex-1 p-8 overflow-y-auto max-w-[1600px] w-full mx-auto flex flex-col justify-between" id="app-main-content">
+          <main className="flex-1 p-6 overflow-y-auto max-w-[1600px] w-full mx-auto flex flex-col" id="app-main-content">
             <div className="flex-1">
               {backendUnreachable && (
                 <div
@@ -402,10 +422,7 @@ export default function App() {
               )}
             </div>
 
-            <footer className="mt-8 pt-4 border-t border-slate-800/10 flex flex-col md:flex-row items-center justify-between text-slate-500 text-[9px] font-mono tracking-wider shrink-0" id="app-branding-footer">
-              <div>AllBright Defi Software Engineering Ltd. 2026</div>
-              <div className="mt-1 md:mt-0 text-[8px] text-slate-600 uppercase">AllBright V01/140M/1ms/2026</div>
-            </footer>
+            <Footer themeMode={themeMode} backendUnreachable={backendUnreachable} />
           </main>
 
           <CopilotPanel 

@@ -36,12 +36,12 @@ const CHAIN_OPTIONS = [
 ];
 
 const COLORS = {
-  bg: '#0D1117',
-  card: '#161B22',
-  input: '#21262D',
-  border: '#30363D',
+  bg: '#020617',
+  card: '#0f172a',
+  input: '#1e293b',
+  border: '#334155',
   text: '#FFFFFF',
-  muted: '#8B949E',
+  muted: '#94a3b8',
   accent: '#2EA043',
   accentHover: '#3FB950',
   danger: '#F85149',
@@ -72,11 +72,11 @@ export default function WalletView({
   const [manualAmount, setManualAmount] = useState<string>('');
   const [withdrawToken, setWithdrawToken] = useState<string>('USDC');
 
-  const inputClass = 'w-full px-4 py-3 rounded-lg text-base font-mono outline-none bg-[#21262D] border border-[#30363D] text-white placeholder:text-[#6E7681] focus:border-[#2EA043] transition-colors';
-  const labelClass = 'block text-xs uppercase tracking-wider text-[#8B949E] mb-2 font-bold';
-  const cardClass = 'bg-[#161B22] border border-[#30363D] rounded-xl p-6';
-  const btnPrimary = 'w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-bold bg-[#2EA043] hover:bg-[#3FB950] text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-  const btnDanger = 'w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-bold bg-[#F85149] hover:bg-[#FF6B62] text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+  const inputClass = 'w-full px-4 py-3 rounded-lg text-base font-mono outline-none bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500 focus:border-teal-500 transition-colors';
+  const labelClass = 'block text-xs uppercase tracking-wider text-slate-400 mb-2 font-bold';
+  const cardClass = 'bg-slate-900 border border-slate-700 rounded-xl p-6';
+  const btnPrimary = 'w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-bold bg-teal-600 hover:bg-teal-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+  const btnDanger = 'w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
   const openAddModal = () => {
     setFormName('');
@@ -194,8 +194,8 @@ export default function WalletView({
             <div>
               <label className={labelClass}>Mode</label>
               <div className="flex gap-2">
-                <button onClick={() => handleWithdrawMode('AUTO')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold uppercase transition-colors cursor-pointer ${withdrawMode === 'AUTO' ? 'bg-[#2EA043] text-white' : 'bg-[#21262D] text-[#8B949E] border border-[#30363D]'}`}>Auto</button>
-                <button onClick={() => handleWithdrawMode('MANUAL')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold uppercase transition-colors cursor-pointer ${withdrawMode === 'MANUAL' ? 'bg-[#2EA043] text-white' : 'bg-[#21262D] text-[#8B949E] border border-[#30363D]'}`}>Manual</button>
+                <button onClick={() => handleWithdrawMode('AUTO')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold uppercase transition-colors cursor-pointer ${withdrawMode === 'AUTO' ? 'bg-[#2EA043] text-white' : 'bg-[#334155] text-[#8B949E] border border-[#475569]'}`}>Auto</button>
+                <button onClick={() => handleWithdrawMode('MANUAL')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold uppercase transition-colors cursor-pointer ${withdrawMode === 'MANUAL' ? 'bg-[#2EA043] text-white' : 'bg-[#334155] text-[#8B949E] border border-[#475569]'}`}>Manual</button>
               </div>
             </div>
             <div>
@@ -232,10 +232,10 @@ export default function WalletView({
           <h3 className="font-bold text-base" style={{ color: COLORS.text }}>Registered Wallets</h3>
           <span className="text-xs font-mono" style={{ color: COLORS.muted }}>{walletsList.length} entries</span>
         </div>
-        <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid #21262D' }}>
+        <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid #334155' }}>
           <table className="w-full text-left text-sm border-collapse">
             <thead>
-              <tr style={{ background: '#0D1117' }}>
+              <tr style={{ background: 'bg-slate-950' }}>
                 <th className="py-3 px-4 font-bold" style={{ color: COLORS.muted }}>Name</th>
                 <th className="py-3 px-4 font-bold" style={{ color: COLORS.muted }}>Address</th>
                 <th className="py-3 px-4 font-bold" style={{ color: COLORS.muted }}>Chain</th>
@@ -252,17 +252,17 @@ export default function WalletView({
                 </tr>
               ) : (
                 walletsList.map((w) => (
-                  <tr key={w.id} className="border-t" style={{ borderColor: '#21262D' }}>
+                  <tr key={w.id} className="border-t" style={{ borderColor: '#334155' }}>
                     <td className="py-3 px-4 font-semibold" style={{ color: COLORS.text }}>{w.name}</td>
                     <td className="py-3 px-4 font-mono" style={{ color: COLORS.muted }}>{shortAddress(w.address)}</td>
-                    <td className="py-3 px-4"><span className="px-2 py-0.5 rounded-full text-xs font-mono" style={{ background: '#21262D', color: COLORS.muted }}>{w.chain}</span></td>
+                    <td className="py-3 px-4"><span className="px-2 py-0.5 rounded-full text-xs font-mono" style={{ background: '#334155', color: COLORS.muted }}>{w.chain}</span></td>
                     <td className="py-3 px-4 text-right">
                       <span className="px-2 py-0.5 rounded-full text-xs font-mono" style={{ background: w.isActive ? 'rgba(46,160,67,0.12)' : 'rgba(139,148,158,0.12)', color: w.isActive ? COLORS.accent : COLORS.muted }}>
                         {w.isActive ? 'ACTIVE' : 'PAUSED'}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <button onClick={() => toggleActive(w.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors mr-2" style={{ background: '#21262D', color: COLORS.muted, border: '1px solid #30363D' }}>
+                      <button onClick={() => toggleActive(w.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors mr-2" style={{ background: '#334155', color: COLORS.muted, border: '1px solid #475569' }}>
                         {w.isActive ? 'Pause' : 'Activate'}
                       </button>
                       <button onClick={() => deleteWallet(w.id)} className="p-1.5 rounded-lg transition-colors inline-flex items-center" style={{ color: COLORS.muted }} title="Delete" onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.danger)} onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.muted)}>
@@ -280,7 +280,7 @@ export default function WalletView({
       {/* Add / Edit Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={closeModal}>
-          <div className="w-full max-w-md bg-[#161B22] border border-[#30363D] rounded-xl p-6" onClick={(e) => e.stopPropagation()} id="wallet-modal">
+          <div className="w-full max-w-md bg-[#161B22] border border-[#475569] rounded-xl p-6" onClick={(e) => e.stopPropagation()} id="wallet-modal">
             <h3 className="font-bold text-lg mb-5" style={{ color: COLORS.text }}>Add Withdrawal Wallet</h3>
             <label className={labelClass}>Name</label>
             <input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Treasury Wallet" className={inputClass + ' mb-4'} />
@@ -296,7 +296,7 @@ export default function WalletView({
               </div>
             )}
             <div className="flex justify-end gap-2 mt-2">
-              <button onClick={closeModal} className="px-4 py-2 rounded-lg text-sm font-bold" style={{ background: '#21262D', color: COLORS.muted, border: '1px solid #30363D' }}>
+              <button onClick={closeModal} className="px-4 py-2 rounded-lg text-sm font-bold" style={{ background: '#334155', color: COLORS.muted, border: '1px solid #475569' }}>
                 Cancel
               </button>
               <button onClick={saveWallet} className="px-4 py-2 rounded-lg text-sm font-bold text-white" style={{ background: COLORS.accent, border: 'none' }}>

@@ -3,12 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Activity, Wallet, Sun, Moon, Droplet, Sparkles } from 'lucide-react';
+import { Activity, Wallet, Sun, Moon, Droplet, Sparkles, Target } from 'lucide-react';
 import { WalletState } from '../types';
 
-interface TopbarProps {
+interface HeaderProps {
   wallet: WalletState;
-  onNetworkChange: (network: string) => void;
   themeMode: 'dark' | 'bright' | 'dusty-blue';
   onThemeChange: (theme: 'dark' | 'bright' | 'dusty-blue') => void;
   copilotOpen: boolean;
@@ -16,9 +15,13 @@ interface TopbarProps {
   selectedCurrency: string;
   onCurrencyChange: (currency: string) => void;
   convertAndFormat: (usdValue: number, minFractionDigits?: number) => string;
+  // Target metric
+  targetPct: number;
+  targetGoalUsd: number;
+  targetProfitUsd: number;
 }
 
-export default function Topbar({
+export default function Header({
   wallet,
   themeMode,
   onThemeChange,
@@ -27,30 +30,39 @@ export default function Topbar({
   selectedCurrency,
   onCurrencyChange,
   convertAndFormat,
-}: TopbarProps) {
+  targetPct,
+  targetGoalUsd,
+  targetProfitUsd,
+}: HeaderProps) {
   const getThemeClasses = () => {
     switch (themeMode) {
       case 'bright':
         return {
-          header: 'border-b border-slate-200 bg-white text-slate-800',
-          border: 'border-slate-200',
-          selectBg: 'bg-slate-100 border border-slate-200 text-slate-700',
+          header: 'border-b border-slate-300 bg-white text-slate-800',
+          border: 'border-slate-300',
+          selectBg: 'bg-slate-100 border border-slate-300 text-slate-700',
           optionClass: 'bg-white text-slate-800',
+          targetBg: 'bg-slate-100 border-slate-300',
+          targetText: 'text-slate-700',
         };
       case 'dusty-blue':
         return {
-          header: 'border-b border-[#314363] bg-[#131b27] text-white',
-          border: 'border-[#314363]',
-          selectBg: 'bg-[#24324a] border border-[#314363] text-sky-200',
-          optionClass: 'bg-[#1b2536] text-sky-200',
+          header: 'border-b border-[#475569] bg-[#1e293b] text-white',
+          border: 'border-[#475569]',
+          selectBg: 'bg-[#334155] border border-[#475569] text-sky-200',
+          optionClass: 'bg-[#1e293b] text-sky-200',
+          targetBg: 'bg-[#334155] border-[#475569]',
+          targetText: 'text-sky-100',
         };
       case 'dark':
       default:
         return {
-          header: 'border-b border-slate-800 bg-slate-950 text-white',
-          border: 'border-slate-800',
-          selectBg: 'bg-slate-900 border border-slate-800 text-slate-300',
-          optionClass: 'bg-slate-950 text-slate-300',
+          header: 'border-b border-slate-700 bg-slate-900 text-white',
+          border: 'border-slate-700',
+          selectBg: 'bg-slate-800 border border-slate-700 text-slate-300',
+          optionClass: 'bg-slate-900 text-slate-300',
+          targetBg: 'bg-slate-800 border-slate-700',
+          targetText: 'text-slate-200',
         };
     }
   };
@@ -59,17 +71,35 @@ export default function Topbar({
 
   return (
     <header
-      className={`h-14 flex items-center justify-between px-6 shrink-0 z-10 ${styles.header}`}
-      id="app-topbar"
+      className={`h-16 flex items-center justify-between px-6 shrink-0 z-20 ${styles.header}`}
+      id="app-header"
     >
-      {/* Left: Branding */}
-      <div className="flex items-center space-x-3 shrink-0">
-        <h2 className="text-[10px] font-sans font-extrabold tracking-wider text-teal-400 uppercase whitespace-nowrap">
-          AllBright V01
-        </h2>
-        <div className="flex items-center space-x-1.5 text-[8px] text-teal-400 font-mono font-bold px-2 py-0.5 rounded-lg bg-teal-500/10 border border-teal-500/20 whitespace-nowrap">
-          <Activity className="h-2.5 w-2.5 text-teal-400 animate-pulse" />
-          <span className="tracking-wider uppercase">140M/1ms/2026</span>
+      {/* Left: Branding + Target Metric */}
+      <div className="flex items-center space-x-4 shrink-0">
+        <div className="flex items-center space-x-3">
+          <h2 className="text-xs font-sans font-extrabold tracking-wider text-teal-400 uppercase whitespace-nowrap">
+            AllBright V01
+          </h2>
+          <div className="flex items-center space-x-1.5 text-[8px] text-teal-400 font-mono font-bold px-2 py-0.5 rounded-lg bg-teal-500/10 border border-teal-500/20 whitespace-nowrap">
+            <Activity className="h-2.5 w-2.5 text-teal-400 animate-pulse" />
+            <span className="tracking-wider uppercase">140M/1ms/2026</span>
+          </div>
+        </div>
+
+        {/* Target Metric */}
+        <div className={`hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-lg border ${styles.targetBg}`}>
+          <Target className="h-3.5 w-3.5 text-teal-400" />
+          <div className="flex items-center space-x-3 text-[10px] font-mono">
+            <span className={`font-bold ${styles.targetText}`}>
+              Target: <span className="text-teal-400">{targetPct}%</span>
+            </span>
+            <span className={`${styles.targetText}`}>
+              Goal: {convertAndFormat(targetGoalUsd)}
+            </span>
+            <span className={`${styles.targetText}`}>
+              Profit: {convertAndFormat(targetProfitUsd)}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -77,7 +107,7 @@ export default function Topbar({
       <div className="flex items-center space-x-3">
         {/* Theme Toggle */}
         <div
-          className="flex items-center bg-slate-950/45 p-1 border border-slate-800/40 rounded-xl space-x-1"
+          className={`flex items-center p-1 rounded-xl space-x-1 ${styles.selectBg}`}
           id="theme-controls"
         >
           <button

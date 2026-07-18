@@ -238,39 +238,39 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
     switch (themeMode) {
       case 'bright':
         return {
-          bg: 'bg-white border-l border-slate-200',
+          bg: 'bg-white border-l border-slate-300',
           title: 'text-slate-950',
           desc: 'text-slate-500',
           chatArea: 'bg-slate-50',
           userBubble: 'bg-teal-600 text-white',
-          assistantBubble: 'bg-white border border-slate-200 text-slate-800',
-          inputBg: 'bg-white border border-slate-200 text-slate-800',
-          card: 'bg-white border border-slate-200 hover:border-teal-500/50 text-slate-700',
+          assistantBubble: 'bg-white border border-slate-300 text-slate-800',
+          inputBg: 'bg-white border border-slate-300 text-slate-800',
+          card: 'bg-white border border-slate-300 hover:border-teal-500/50 text-slate-700',
           accentText: 'text-teal-600'
         };
       case 'dusty-blue':
         return {
-          bg: 'bg-[#1b2536] border-l border-[#314363]',
+          bg: 'bg-[#1e293b] border-l border-[#475569]',
           title: 'text-white',
           desc: 'text-slate-300',
-          chatArea: 'bg-[#131b27]',
+          chatArea: 'bg-[#0f172a]',
           userBubble: 'bg-sky-600 text-white',
-          assistantBubble: 'bg-[#24324a] border border-[#314363] text-slate-200',
-          inputBg: 'bg-[#1e2a3d] border border-[#314363] text-slate-100 focus:border-sky-500/50',
-          card: 'bg-[#24324a] border border-[#314363] hover:border-sky-400 text-slate-300',
+          assistantBubble: 'bg-[#334155] border border-[#475569] text-slate-200',
+          inputBg: 'bg-[#1e293b] border border-[#475569] text-slate-100 focus:border-sky-500/50',
+          card: 'bg-[#334155] border border-[#475569] hover:border-sky-400 text-slate-300',
           accentText: 'text-sky-400'
         };
       case 'dark':
       default:
         return {
-          bg: 'bg-slate-900 border-l border-slate-800/80',
+          bg: 'bg-slate-900 border-l border-slate-700',
           title: 'text-white',
           desc: 'text-slate-400',
-          chatArea: 'bg-slate-950/80',
+          chatArea: 'bg-slate-950',
           userBubble: 'bg-teal-600 text-slate-950 font-bold',
-          assistantBubble: 'bg-slate-900 border border-slate-800 text-slate-200',
-          inputBg: 'bg-slate-950 border border-slate-800 text-slate-100 focus:border-teal-500/50',
-          card: 'bg-slate-900 border border-slate-800 hover:border-teal-500/50 text-slate-300',
+          assistantBubble: 'bg-slate-800 border border-slate-700 text-slate-200',
+          inputBg: 'bg-slate-900 border border-slate-700 text-slate-100 focus:border-teal-500/50',
+          card: 'bg-slate-800 border border-slate-700 hover:border-teal-500/50 text-slate-300',
           accentText: 'text-teal-400'
         };
     }
@@ -382,10 +382,10 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
 
       {/* Control Panel: Agent Selector & Plan/Act Mode */}
       {!collapsed && (
-        <div className="px-4 py-2.5 border-t border-slate-800/20 bg-slate-950/20 flex flex-col space-y-2 shrink-0">
+        <div className="px-4 py-2.5 border-t border-slate-700/30 bg-slate-950/20 flex flex-col space-y-2 shrink-0">
           <div className="flex items-center justify-between space-x-2">
             {/* Plan/Act Segmented Toggle */}
-            <div className="flex bg-slate-950/60 p-0.5 rounded-lg border border-slate-800/40 w-[45%] shrink-0">
+            <div className="flex bg-slate-900/60 p-0.5 rounded-lg border border-slate-700/40 w-[45%] shrink-0">
               <button
                 id="btn-copilot-mode-plan"
                 type="button"
@@ -425,7 +425,7 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
                     autoFocus
                     value={newAgentName}
                     onChange={(e) => setNewAgentName(e.target.value)}
-                    className="flex-1 bg-slate-950/80 border border-teal-500/50 rounded-lg py-1 px-2 text-[9px] font-mono text-slate-100 focus:outline-none placeholder-slate-600"
+                    className="flex-1 bg-slate-900/80 border border-teal-500/50 rounded-lg py-1 px-2 text-[9px] font-mono text-slate-100 focus:outline-none placeholder-slate-600"
                   />
                   <button
                     type="submit"
@@ -455,7 +455,7 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
                         setSelectedAgent(e.target.value);
                       }
                     }}
-                    className="w-full bg-slate-950/60 border border-slate-800/40 rounded-lg py-1 px-1.5 text-[9px] font-mono text-slate-300 focus:outline-none focus:ring-1 focus:ring-teal-500/20 cursor-pointer"
+                    className="w-full bg-slate-900/60 border border-slate-700/40 rounded-lg py-1 px-1.5 text-[9px] font-mono text-slate-300 focus:outline-none focus:ring-1 focus:ring-teal-500/20 cursor-pointer"
                   >
                     {modelAgents.map((agent) => (
                       <option key={agent} value={agent} className="bg-slate-900 text-slate-300 font-mono text-xs">
@@ -472,7 +472,7 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
           </div>
 
           {/* Dynamic API Configuration Sub-panel for Selected Model */}
-          <div className="p-2 rounded-lg border border-slate-800/60 bg-slate-950/40 space-y-1.5 animate-fadeIn text-[9px]">
+          <div className="p-2 rounded-lg border border-slate-700/60 bg-slate-900/40 space-y-1.5 animate-fadeIn text-[9px]">
             <div className="flex items-center justify-between">
               <span className="font-mono font-bold text-slate-400 uppercase tracking-wider">
                 🔑 {selectedAgent} API Key Credentials
@@ -490,7 +490,7 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
                     placeholder={`${selectedAgent} API Key`}
                     value={credApiKey}
                     onChange={(e) => setCredApiKey(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded px-2 py-0.5 font-mono text-[9px] text-white focus:outline-none focus:border-teal-500/50"
+                    className="w-full bg-slate-900/80 border border-slate-700 rounded px-2 py-0.5 font-mono text-[9px] text-white focus:outline-none focus:border-teal-500/50"
                   />
                   <button
                     type="button"
@@ -510,7 +510,7 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
                     value={credEndpoint}
                     onChange={(e) => setCredEndpoint(e.target.value)}
                     title="Base API Endpoint URL"
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded px-2 py-0.5 font-mono text-[9px] text-white focus:outline-none focus:border-teal-500/50"
+                    className="w-full bg-slate-900/80 border border-slate-700 rounded px-2 py-0.5 font-mono text-[9px] text-white focus:outline-none focus:border-teal-500/50"
                   />
                 </div>
                 <div>
@@ -520,7 +520,7 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
                     value={credVariant}
                     onChange={(e) => setCredVariant(e.target.value)}
                     title="Variant Name (e.g. gemini-2.5-flash)"
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded px-2 py-0.5 font-mono text-[9px] text-white focus:outline-none focus:border-teal-500/50"
+                    className="w-full bg-slate-900/80 border border-slate-700 rounded px-2 py-0.5 font-mono text-[9px] text-white focus:outline-none focus:border-teal-500/50"
                   />
                 </div>
               </div>
@@ -572,7 +572,7 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
             id="copilot-btn-attach"
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="p-2.5 rounded-xl border border-dashed border-slate-800 hover:border-teal-500/40 bg-slate-950/30 hover:bg-slate-950/60 text-slate-500 hover:text-teal-400 flex items-center justify-center transition-all shrink-0 cursor-pointer"
+            className="p-2.5 rounded-xl border border-dashed border-slate-700 hover:border-teal-500/40 bg-slate-950/30 hover:bg-slate-900/60 text-slate-500 hover:text-teal-400 flex items-center justify-center transition-all shrink-0 cursor-pointer"
             title="Attach File"
           >
             <Plus className="h-4 w-4" />

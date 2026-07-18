@@ -29,37 +29,37 @@ export default function Sidebar({ activeTab, setActiveTab, isEmbedded, themeMode
     switch (themeMode) {
       case 'bright':
         return {
-          aside: 'border-r border-slate-200 bg-slate-50 flex flex-col justify-between h-screen sticky top-0',
-          border: 'border-slate-200',
-          brandHeader: 'p-6 border-b border-slate-200',
+          aside: 'border-r border-slate-300 bg-slate-100 flex flex-col justify-between h-screen sticky top-0',
+          border: 'border-slate-300',
+          brandHeader: 'p-6 border-b border-slate-300',
           title: 'text-slate-900',
-          btnActive: 'bg-white text-teal-600 border border-slate-200 shadow-sm',
+          btnActive: 'bg-white text-teal-600 border border-slate-300 shadow-sm',
           btnInactive: 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent',
-          card: 'bg-white border border-slate-200 p-4 rounded-xl',
-          borderT: 'border-t border-slate-200'
+          card: 'bg-white border border-slate-300 p-4 rounded-xl',
+          borderT: 'border-t border-slate-300'
         };
       case 'dusty-blue':
         return {
-          aside: 'border-r border-[#314363] bg-[#172230] flex flex-col justify-between h-screen sticky top-0',
-          border: 'border-[#314363]',
-          brandHeader: 'p-6 border-b border-[#314363]',
+          aside: 'border-r border-[#475569] bg-[#1e293b] flex flex-col justify-between h-screen sticky top-0',
+          border: 'border-[#475569]',
+          brandHeader: 'p-6 border-b border-[#475569]',
           title: 'text-white',
-          btnActive: 'bg-[#24324a] text-sky-300 border border-[#314363]',
-          btnInactive: 'text-slate-300 hover:text-white hover:bg-[#202d40] border border-transparent',
-          card: 'bg-[#202d40] border border-[#314363] p-4 rounded-xl',
-          borderT: 'border-[#314363]'
+          btnActive: 'bg-[#334155] text-sky-300 border border-[#475569]',
+          btnInactive: 'text-slate-300 hover:text-white hover:bg-[#334155]/50 border border-transparent',
+          card: 'bg-[#334155] border border-[#475569] p-4 rounded-xl',
+          borderT: 'border-t border-[#475569]'
         };
       case 'dark':
       default:
         return {
-          aside: 'border-r border-slate-800 bg-slate-950 flex flex-col justify-between h-screen sticky top-0',
-          border: 'border-slate-800',
-          brandHeader: 'p-6 border-b border-slate-900',
+          aside: 'border-r border-slate-700 bg-slate-900 flex flex-col justify-between h-screen sticky top-0',
+          border: 'border-slate-700',
+          brandHeader: 'p-6 border-b border-slate-700',
           title: 'text-white',
-          btnActive: 'bg-gradient-to-r from-teal-950/40 to-slate-900 text-teal-400 border border-teal-500/20',
-          btnInactive: 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50 border border-transparent',
-          card: 'bg-slate-900/40 border border-slate-800/80 p-4 rounded-xl',
-          borderT: 'border-t border-slate-900'
+          btnActive: 'bg-slate-800 text-teal-400 border border-teal-500/30',
+          btnInactive: 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent',
+          card: 'bg-slate-800 border border-slate-700 p-4 rounded-xl',
+          borderT: 'border-t border-slate-700'
         };
     }
   };

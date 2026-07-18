@@ -33,12 +33,12 @@ export default function ComplianceView({ governanceCards, themeMode }: Complianc
   const getThemeClasses = () => {
     switch (themeMode) {
       case 'bright':
-        return { card: 'bg-white border border-slate-200 rounded-2xl p-5 shadow-sm', textMuted: 'text-slate-500', textWhite: 'text-slate-900' };
+        return { card: 'bg-white border border-slate-300 rounded-2xl p-5 shadow-sm', textMuted: 'text-slate-500', textWhite: 'text-slate-900' };
       case 'dusty-blue':
-        return { card: 'bg-[#1e2a3d] border border-[#314363] rounded-2xl p-5 shadow-md', textMuted: 'text-slate-400', textWhite: 'text-white' };
+        return { card: 'bg-[#1e293b] border border-[#475569] rounded-2xl p-5 shadow-md', textMuted: 'text-slate-300', textWhite: 'text-white' };
       case 'dark':
       default:
-        return { card: 'bg-slate-900 border border-slate-800/80 rounded-2xl p-5 shadow-xl', textMuted: 'text-slate-400', textWhite: 'text-white' };
+        return { card: 'bg-slate-900 border border-slate-700 rounded-2xl p-5 shadow-xl', textMuted: 'text-slate-400', textWhite: 'text-white' };
     }
   };
 
