@@ -1,11 +1,23 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, loadEnv} from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  // Load env files (.env, .env.production, etc.) for the current mode.
+  const env = loadEnv(mode, path.resolve(__dirname), '');
+
+  // Guaranteed build-time fallbacks so the SPA never crashes on a missing var.
+  // In production the Express server proxies /api, so a relative base is correct.
+  const VITE_API_BASE = env.VITE_API_BASE || '/';
+  const VITE_ENGINE_MODE = env.VITE_ENGINE_MODE || 'simulation';
+
   return {
     base: '/',
+    define: {
+      'import.meta.env.VITE_API_BASE': JSON.stringify(VITE_API_BASE),
+      'import.meta.env.VITE_ENGINE_MODE': JSON.stringify(VITE_ENGINE_MODE),
+    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

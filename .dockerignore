@@ -28,6 +28,15 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Secrets - never copy real env files into the image
+.env
+.env.*
+!.env.example
+apps/dashboard/.env
+apps/dashboard/.env.*
+!apps/dashboard/.env.example
+apps/dashboard/.env.production
+
 # Large data
 logs/
 data/
