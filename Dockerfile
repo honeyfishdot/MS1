@@ -17,7 +17,13 @@ RUN npm install --legacy-peer-deps
 
 # Copy source and build
 COPY apps/dashboard/ .
-RUN npm run build
+# Deterministic production build. `npm ci` (clean lockfile install) + force
+# rebuild of dist so the served bundle and the runtime-generated index.html
+# (server.ts discovers the asset hash at startup) always match — this is what
+# prevents the stale-index.html → deleted-JS 100% white page.
+RUN rm -rf dist node_modules/.cache \
+ && (npm ci --legacy-peer-deps || npm install --legacy-peer-deps) \
+ && npm run build
 
 # Verify the build output
 RUN ls -la dist/ && echo "Build complete" && head -5 dist/index.html
