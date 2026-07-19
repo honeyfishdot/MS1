@@ -8,24 +8,25 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-// Environment validation - warn (do NOT throw) if recommended VITE_* vars are missing.
-// Throwing here blanks the entire app (white screen) in production builds where
-// build-time env vars may be absent. App.tsx provides safe fallbacks for all of these.
-const RECOMMENDED_ENV_VARS = [
-  'VITE_API_BASE',
-  'VITE_ENGINE_MODE',
-];
+// Global error handler — catches errors before React mounts and displays them
+window.onerror = function (msg, url, line, col, error) {
+  const root = document.getElementById('root');
+  if (root && !root.hasChildNodes()) {
+    root.innerHTML = `<pre style="color:#f87171;padding:16px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;background:#020617;min-height:100vh;margin:0;">Fatal JavaScript Error:
+${msg}
+Location: ${url}:${line}:${col}
+Stack: ${error ? error.stack : 'N/A'}
+Build: 2026-07-19-critical-fix-v3</pre>`;
+  }
+  return false;
+};
 
-const missing = RECOMMENDED_ENV_VARS.filter(key => !import.meta.env[key]);
-if (missing.length > 0) {
-  console.warn(`Missing recommended environment variables (using fallbacks): ${missing.join(', ')}`);
-} else {
-  console.log('Environment validation passed');
-}
+window.addEventListener('unhandledrejection', function (event) {
+  console.error('Unhandled promise rejection:', event.reason);
+});
 
 // Deploy marker — bumping this forces a fresh frontend rebuild on Render
-// so the white-page fix (commit b3d1217 + critical CSS + API_BASE fix) is included.
-console.log('Allbright Dashboard build: 2026-07-19-critical-fix-v2');
+console.log('Allbright Dashboard build: 2026-07-19-critical-fix-v3');
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {
