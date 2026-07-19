@@ -149,13 +149,25 @@ export default function App() {
 
   const safeFetchJson = async (url: string, options?: RequestInit) => {
     try {
-      const res = await fetch(API_BASE + url, options);
-      if (!res.ok) return null;
+      const fullUrl = API_BASE + url;
+      console.log(`[API] Fetching ${fullUrl}`);
+      const res = await fetch(fullUrl, options);
+      console.log(`[API] ${url} response status:`, res.status, res.statusText);
+      if (!res.ok) {
+        console.warn(`[API] ${url} failed with status ${res.status}`);
+        return null;
+      }
       const contentType = res.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) return null;
-      return await res.json();
+      console.log(`[API] ${url} content-type:`, contentType);
+      if (!contentType || !contentType.includes('application/json')) {
+        console.warn(`[API] ${url} returned non-JSON response`);
+        return null;
+      }
+      const data = await res.json();
+      console.log(`[API] ${url} success:`, data);
+      return data;
     } catch (err) {
-      console.warn(`Silently caught fetch error for ${url}:`, err);
+      console.error(`[API] Fetch error for ${url}:`, err);
       return null;
     }
   };
@@ -417,7 +429,7 @@ export default function App() {
                 <CommanderView settings={settingsWithLocalMode} onUpdateSettings={handleUpdateSettings} convertAndFormat={convertAndFormat} themeMode={themeMode} />
               )}
               {activeTab === 'wallet' && (
-                <WalletView wallet={wallet} settings={settingsWithLocalMode} isUpdating={isWalletUpdating} themeMode={themeMode} convertAndFormat={convertAndFormat} walletsList={walletsList} onUpdateWalletsList={setWalletsList} onUpdateSettings={handleUpdateSettings} />
+                <WalletView wallet={wallet || { connected: true, address: ENV_WALLET_ADDRESS, network: 'Arbitrum Mainnet', balances: {}, totalValueUsd: 0, transactions: [] }} settings={settingsWithLocalMode} isUpdating={isWalletUpdating} themeMode={themeMode} convertAndFormat={convertAndFormat} walletsList={walletsList} onUpdateWalletsList={setWalletsList} onUpdateSettings={handleUpdateSettings} />
               )}
               {activeTab === 'compliance' && (
                 <ComplianceView governanceCards={governanceCards} themeMode={themeMode} />
