@@ -302,30 +302,43 @@ async function startServer() {
     console.warn(`⚠️  Frontend build not found at ${distPath}. Run "npm run build" first.`);
   }
 
+  // Global cache policy. HTML is NEVER cached (so a redeploy that changes the
+  // hashed JS bundle names always pulls a fresh index.html — otherwise browsers
+  // keep a stale index.html pointing at a deleted JS file, which renders a
+  // 100% white page). Hashed JS/CSS are cached hard (immutable).
+  app.use((req, res, next) => {
+    const safePath = (req.path || "/").split("?")[0];
+    const filePath = path.join(distPath, safePath === "/" ? "index.html" : safePath);
+    const isHtml = filePath.endsWith(".html") || safePath === "/";
+    const isHashedAsset = /\/assets\/[^/]+\.(js|css)$/.test(safePath);
+
+    if (isHtml) {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      res.setHeader("Surrogate-Control", "no-store");
+      res.setHeader("Clear-Site-Data", "\"cache\"");
+    } else if (isHashedAsset) {
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    }
+    next();
+  });
+
   // Serve static frontend assets in both dev and production
-  // Aggressive cache-busting to fix white page issues
   app.use((req, res, next) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
-    const safePath = req.path.split("?")[0];
+    const safePath = (req.path || "/").split("?")[0];
     const filePath = path.join(distPath, safePath === "/" ? "index.html" : safePath);
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = path.extname(filePath);
       const contentType = ext === ".js" ? "application/javascript" :
-                         ext === ".css" ? "text/css" :
-                         ext === ".html" ? "text/html" :
-                         ext === ".json" ? "application/json" :
-                         ext === ".png" ? "image/png" :
-                         ext === ".svg" ? "image/svg+xml" :
-                         "application/octet-stream";
+                          ext === ".css" ? "text/css" :
+                          ext === ".html" ? "text/html" :
+                          ext === ".json" ? "application/json" :
+                          ext === ".png" ? "image/png" :
+                          ext === ".svg" ? "image/svg+xml" :
+                          "application/octet-stream";
       res.setHeader("Content-Type", contentType);
-      // Aggressive cache-busting for HTML to fix white page issues
-      if (ext === ".html") {
-        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
-        res.setHeader("Pragma", "no-cache");
-        res.setHeader("Expires", "0");
-      } else if (ext === ".js" || ext === ".css") {
-        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      }
       const stream = fs.createReadStream(filePath);
       stream.pipe(res);
       stream.on("error", () => next());
@@ -334,8 +347,11 @@ async function startServer() {
     }
   });
 
-  // SPA fallback — all non-API routes serve index.html
+  // SPA fallback — all non-API routes serve index.html with no-cache headers
   app.get("*", (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.sendFile(path.join(distPath, "index.html"));
   });
 
