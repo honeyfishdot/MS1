@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -36,7 +36,7 @@ app.use(
 // deleted. If access control is needed later, add it behind an explicit flag.)
 app.use(express.json());
 
-// Deployment marker: 2026-07-19-white-page-fix-v2
+// Deployment marker: 2026-07-19-white-page-fix-v3
 const PORT = parseInt(process.env.PORT || "3002");
 
 // When USE_REMOTE_BACKEND=true the dashboard proxies to the real Rust backend
@@ -272,7 +272,7 @@ app.post("/api/system/kill", (req, res) => res.json({ halted: true, ...mutationR
 app.post("/api/wallet/deposit", (req, res) => res.json({ wallet: buildWallet(), ...mutationResult(req.body, "deposit") }));
 app.post("/api/wallet/withdraw", (req, res) => res.json({ wallet: buildWallet(), ...mutationResult(req.body, "withdraw") }));
 app.post("/api/wallet/transfer-profit", (req, res) => res.json({ transferredAmountUsdc: round(jitter(120, 0.2), 2), ...mutationResult(req.body, "transfer") }));
-app.post("/api/auto-transfer/trigger", (req, res) => res.json({ triggered: true, ...mutationResult(req.body, "auto-transfer") }));
+app.post("/api/auto-transfer/trigger", (req, res) => res.json({ triggered: true, ...mutationResult(req.body, "trigger") }));
 app.post("/api/copilot", (req, res) => res.json({ reply: "Copilot is operating in local mode. Connect a model API key for live assistance.", ...mutationResult(req.body, "copilot") }));
 app.post("/api/deploy", (req, res) => res.json({ status: "queued", ...mutationResult(req.body, "deploy") }));
 app.post("/api/deployment/authorize", (req, res) => res.json({ authorized: true, ...mutationResult(req.body, "authorize") }));
@@ -303,7 +303,7 @@ async function startServer() {
   }
 
   // Serve static frontend assets in both dev and production
-  // Cache-busting: no-cache for HTML, immutable for hashed assets
+  // Aggressive cache-busting to fix white page issues
   app.use((req, res, next) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
     const safePath = req.path.split("?")[0];
@@ -318,9 +318,11 @@ async function startServer() {
                          ext === ".svg" ? "image/svg+xml" :
                          "application/octet-stream";
       res.setHeader("Content-Type", contentType);
-      // Cache-busting: HTML should never be cached, hashed assets can be cached forever
+      // Aggressive cache-busting for HTML to fix white page issues
       if (ext === ".html") {
-        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
       } else if (ext === ".js" || ext === ".css") {
         res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
       }
