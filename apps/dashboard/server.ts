@@ -282,15 +282,15 @@ app.post("/api/deployment/reset", (req, res) => res.json({ reset: true, ...mutat
 async function startServer() {
   // Resolve the frontend dist directory.
   // When running `node dist/server.cjs` from apps/dashboard/:
-  //   - __dirname = apps/dashboard/dist/  (correct — use this)
-  //   - process.cwd() may be the repo root (d:\MS1\AB4) which has a stale dist/
-  // Priority: __dirname/dist > __dirname/../dist > cwd/dist
+  //   - __dirname = apps/dashboard/dist/  → use __dirname directly
+  // When running `tsx server.ts` from apps/dashboard/:
+  //   - __dirname = apps/dashboard/  → use path.join(__dirname, "dist")
+  // When running from repo root (d:\MS1\AB4):
+  //   - __dirname = apps/dashboard/  → use path.join(__dirname, "dist")
   const distPath =
-    fs.existsSync(path.join(__dirname, "dist"))
-      ? path.join(__dirname, "dist")
-      : fs.existsSync(path.join(process.cwd(), "dist"))
-        ? path.join(process.cwd(), "dist")
-        : path.join(__dirname, "..", "dist");
+    __dirname.endsWith("dist") || __dirname.endsWith("dist\\")
+      ? __dirname
+      : path.join(__dirname, "dist");
 
   if (!fs.existsSync(distPath)) {
     console.warn(`⚠️  Frontend build not found at ${distPath}. Run "npm run build" first.`);
