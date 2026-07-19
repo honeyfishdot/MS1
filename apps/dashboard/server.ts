@@ -305,7 +305,8 @@ async function startServer() {
   // Global cache policy. HTML is NEVER cached (so a redeploy that changes the
   // hashed JS bundle names always pulls a fresh index.html — otherwise browsers
   // keep a stale index.html pointing at a deleted JS file, which renders a
-  // 100% white page). Hashed JS/CSS are cached hard (immutable).
+  // 100% white page). Hashed JS/CSS are cached hard (immutable) BUT
+  // we add a version query to force cache busting.
   app.use((req, res, next) => {
     const safePath = (req.path || "/").split("?")[0];
     const filePath = path.join(distPath, safePath === "/" ? "index.html" : safePath);
@@ -319,7 +320,12 @@ async function startServer() {
       res.setHeader("Surrogate-Control", "no-store");
       res.setHeader("Clear-Site-Data", "\"cache\"");
     } else if (isHashedAsset) {
-      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      // Use the ETag from file stats to force cache validation
+      const stats = fs.statSync(filePath);
+      const eTag = `W/${stats.size}-${stats.mtime.getTime()}`;
+      res.setHeader("ETag", eTag);
+      // Public cache with short max-age and force revalidation
+      res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
     }
     next();
   });
