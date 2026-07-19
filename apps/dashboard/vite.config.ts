@@ -32,15 +32,12 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       assetsDir: 'assets',
-      // Use FIXED (non-hashed) asset filenames. Content hashes change on every
-      // build, so a browser holding a stale index.html would request a deleted
-      // JS file and render a 100% white page. Fixed names keep old HTML valid
-      // and the server already sends no-cache for HTML to force refresh.
+      // Use hashed asset filenames to bust CDN caches and prevent stale JS references.
       rollupOptions: {
         output: {
-          entryFileNames: 'assets/index.js',
-          chunkFileNames: 'assets/[name].js',
-          assetFileNames: 'assets/[name][extname]',
+          entryFileNames: 'assets/index.[hash].js',
+          chunkFileNames: 'assets/[name].[hash].js',
+          assetFileNames: 'assets/[name].[hash][extname]',
         },
       },
     },
