@@ -24,6 +24,7 @@ export default function CommanderView({ settings, onUpdateSettings, convertAndFo
   const [deployMode, setDeployMode] = useState<'manual' | 'autonomous'>('manual');
   const [preflightPassed, setPreflightPassed] = useState<boolean | null>(null);
   const [simRunning, setSimRunning] = useState(false);
+  const [simError, setSimError] = useState<string | null>(null);
   const [awaitingApproval, setAwaitingApproval] = useState(false);
   const [pendingStage, setPendingStage] = useState<string | null>(null);
 
@@ -47,11 +48,17 @@ export default function CommanderView({ settings, onUpdateSettings, convertAndFo
       try {
         const [pf, sim, dep] = await Promise.all([
           fetch(API_BASE + '/api/preflight/status').then(r => r.ok ? r.json() : null).catch(() => null),
-          fetch(API_BASE + '/api/simulation/status').then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(API_BASE + '/api/simulation/status').then(r => r.ok ? r.json() : null).catch((err) => { console.warn('Simulation status error:', err); return { error: err.message }; }),
           fetch(API_BASE + '/api/deploy/status').then(r => r.ok ? r.json() : null).catch(() => null),
         ]);
         if (pf) setPreflightPassed(pf.passed);
-        if (sim) setSimRunning(sim.running);
+        if (sim && sim.error) {
+          setSimRunning(false);
+          setSimError(sim.error);
+        } else if (sim) {
+          setSimRunning(sim.running || false);
+          setSimError(null);
+        }
         if (dep) {
           if (dep.backend_mode) setBackendMode(dep.backend_mode);
           if (dep.awaiting_approval) {
@@ -63,7 +70,7 @@ export default function CommanderView({ settings, onUpdateSettings, convertAndFo
           }
           if (dep.stage && dep.stage !== 'idle') { setDeployState('success'); setDeployTxHash(dep.txHash); }
         }
-      } catch (e) {}
+      } catch (e) { console.warn('Pipeline fetch error:', e); }
     };
     fetchPipeline();
     const iv = setInterval(fetchPipeline, 5000);
@@ -154,7 +161,10 @@ export default function CommanderView({ settings, onUpdateSettings, convertAndFo
           <div className={styles.innerCard}>
             <div className="flex justify-between items-center mb-3"><span className="text-[10px] font-bold text-amber-400 font-mono tracking-widest uppercase">2. SIMULATION</span><div className="flex bg-slate-800/60 p-0.5 rounded border border-slate-700 text-[9px] font-mono"><button onClick={() => setPipelineToggles(prev => ({ ...prev, simulation: 'auto' }))} className={`px-1.5 py-0.5 rounded font-bold uppercase transition-all ${pipelineToggles.simulation === 'auto' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}>Auto</button><button onClick={() => setPipelineToggles(prev => ({ ...prev, simulation: 'manual' }))} className={`px-1.5 py-0.5 rounded font-bold uppercase transition-all ${pipelineToggles.simulation === 'manual' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}>Manual</button></div></div>
             <p className={`text-xs ${styles.textMuted} leading-relaxed`}>Simulates routes over local forks to evaluate exact swap slippage and potential frontrunning bundle profitability.</p>
-            <div className="mt-4 pt-3 border-t border-slate-700/30 flex justify-between items-center text-[10px] font-mono"><span className={styles.textMuted}>Sim Cycle</span><span className={`font-bold flex items-center gap-1 ${simRunning ? 'text-amber-400' : 'text-emerald-400'}`}><span className={`h-1.5 w-1.5 rounded-full ${simRunning ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} /><span>{simRunning ? 'Simulating...' : 'Idle (Ready)'}</span></span></div>
+            <div className="mt-4 pt-3 border-t border-slate-700/30 space-y-2">
+              <div className="flex justify-between items-center text-[10px] font-mono"><span className={styles.textMuted}>Sim Cycle</span><span className={`font-bold flex items-center gap-1 ${simRunning ? 'text-amber-400' : 'text-emerald-400'}`}><span className={`h-1.5 w-1.5 rounded-full ${simRunning ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} /><span>{simRunning ? 'Simulating...' : 'Idle (Ready)'}</span></span></div>
+              {simError && (<div className="text-[9px] font-mono text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded p-1.5">Sim Error: {simError}</div>)}
+            </div>
           </div>
           <div className={`${styles.innerCard} min-h-[220px]`}>
             <div className="flex flex-col gap-3 mb-3">

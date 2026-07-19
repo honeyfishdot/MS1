@@ -65,6 +65,7 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
   const [attachedFile, setAttachedFile] = useState<{ name: string; size: string } | null>(null);
 
   // Credentials state
+  const [showCredentials, setShowCredentials] = useState(false);
   const [credApiKey, setCredApiKey] = useState('');
   const [credEndpoint, setCredEndpoint] = useState('');
   const [credVariant, setCredVariant] = useState('');
@@ -85,6 +86,7 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
 
   // Load saved credentials for selected agent
   useEffect(() => {
+    if (!showCredentials) return;
     try {
       const saved = localStorage.getItem(`allbright_creds_${selectedAgent}`);
       if (saved) {
@@ -103,7 +105,7 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
       setCredVariant('');
     }
     setCredSuccessMessage('');
-  }, [selectedAgent]);
+  }, [selectedAgent, showCredentials]);
 
   const handleSend = async (text?: string) => {
     const msg = text || inputValue;
@@ -273,23 +275,25 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
             <div ref={chatEndRef} />
           </div>
 
-          {/* Quick Action Preset Prompt Buttons */}
-          <div className="p-3 border-t border-inherit space-y-1.5 bg-inherit/40">
-            <span className="text-[9px] font-mono font-bold uppercase text-slate-500 block mb-1">Suggested Inquiries</span>
-            <div className="flex flex-col space-y-1">
-              {presetPrompts.map((preset, idx) => (
-                <button
-                  key={idx}
-                  id={`preset-copilot-btn-${idx}`}
-                  onClick={() => handleSend(preset.query)}
-                  className={`p-2 rounded-lg text-left text-[11px] font-mono font-medium transition-all flex items-center justify-between group cursor-pointer ${styles.card}`}
-                >
-                  <span>{preset.label}</span>
-                  <span className="text-[10px] text-teal-400">›</span>
-                </button>
-              ))}
+             {/* Quick Action Preset Prompt Buttons */}
+          {!showCredentials && (
+            <div className="p-3 border-t border-inherit space-y-1.5 bg-inherit/40">
+              <span className="text-[9px] font-mono font-bold uppercase text-slate-500 block mb-1">Suggested Inquiries</span>
+              <div className="flex flex-col space-y-1">
+                {presetPrompts.map((preset, idx) => (
+                  <button
+                    key={idx}
+                    id={`preset-copilot-btn-${idx}`}
+                    onClick={() => handleSend(preset.query)}
+                    className={`p-2 rounded-lg text-left text-[11px] font-mono font-medium transition-all flex items-center justify-between group cursor-pointer ${styles.card}`}
+                  >
+                    <span>{preset.label}</span>
+                    <span className="text-[10px] text-teal-400">›</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Attached file status banner */}
           {attachedFile && (
@@ -448,8 +452,9 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
               </div>
             </div>
 
-            {/* Dynamic API Configuration Sub-panel for Selected Model */}
-            <div className="p-2 rounded-lg border border-slate-700/60 bg-slate-900/40 space-y-1.5 animate-fadeIn text-[9px]">
+             {/* Dynamic API Configuration Sub-panel for Selected Model */}
+            {showCredentials && (
+              <div className="p-2 rounded-lg border border-slate-700/60 bg-slate-900/40 space-y-1.5 animate-fadeIn text-[9px]">
               <div className="flex items-center justify-between">
                 <span className="font-mono font-bold text-slate-400 uppercase tracking-wider">
                   🔑 {selectedAgent} API Key Credentials
@@ -510,6 +515,13 @@ export default function CopilotPanel({ themeMode, isOpen, onClose, isCollapsed =
                 </button>
               </form>
             </div>
+            )}
+            <button
+              onClick={() => setShowCredentials(!showCredentials)}
+              className="w-full mt-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono font-bold uppercase tracking-wider rounded transition-all text-[8px] cursor-pointer"
+            >
+              {showCredentials ? 'Hide' : 'Configure'} API Credentials
+            </button>
           </div>
         </div>
       ) : (
