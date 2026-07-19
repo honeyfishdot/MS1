@@ -7,7 +7,6 @@ import express from "express";
 import path from "path";
 import * as fs from "fs";
 import cors from "cors";
-import * as crypto from "crypto";
 import { fileURLToPath } from "url";
 
 const __filename = typeof __filename !== "undefined" ? __filename : fileURLToPath(import.meta.url);
@@ -32,37 +31,9 @@ app.use(
   })
 );
 
-// Auth is opt-in. The SPA frontend (App.tsx) does not carry a JWT bearer
-// token, so enforcing auth on every /api route would break the dashboard.
-// When DASHBOARD_AUTH=true, read endpoints stay open and only mutating
-// execution/deploy/wallet endpoints require the dashboard bearer token.
-const DASHBOARD_AUTH = process.env.DASHBOARD_AUTH === "true";
-
-// Routes that mutate state. When DASHBOARD_AUTH is enabled these require a
-// valid bearer token; everything else (metrics, opportunities, settings GET,
-// health) stays open so the dashboard can render live data unauthenticated.
-const PROTECTED_ROUTES = new Set([
-  "POST:/api/execute",
-  "POST:/api/system/kill",
-  "POST:/api/wallet/deposit",
-  "POST:/api/wallet/withdraw",
-  "POST:/api/wallet/transfer-profit",
-  "POST:/api/settings",
-  "POST:/api/deploy",
-  "POST:/api/deployment/authorize",
-  "POST:/api/deployment/run",
-  "POST:/api/deployment/approve",
-  "POST:/api/deployment/reset",
-  "POST:/api/auto-transfer/trigger",
-  "POST:/api/copilot",
-]);
-
-app.use("/api", (req, res, next) => {
-  if (DASHBOARD_AUTH && PROTECTED_ROUTES.has(`${req.method}:${req.path}`)) {
-    return authMiddleware(req, res, next);
-  }
-  next();
-});
+// No browser sign-in: the dashboard is open and renders live data for any
+// visitor. (Auth was removed per Commander request — DASHBOARD_AUTH/JWT gate
+// deleted. If access control is needed later, add it behind an explicit flag.)
 app.use(express.json());
 
 const PORT = parseInt(process.env.PORT || "3002");
@@ -86,36 +57,6 @@ function normalizeBackendUrl(raw: string): string {
 }
 
 const BACKEND_URL = normalizeBackendUrl(process.env.RUST_BACKEND_URL || "http://localhost:3001");
-const API_KEY = process.env.RUST_API_KEY;
-
-function verifyJwt(token: string): boolean {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return false;
-    const [headerB64, payloadB64, signatureB64] = parts;
-    const signingInput = `${headerB64}.${payloadB64}`;
-    const secret = process.env.JWT_SECRET;
-    if (!secret) return false;
-    const expected = crypto.createHmac("sha256", secret).update(signingInput).digest("base64url");
-    const provided = signatureB64.replace(/-/g, "+").replace(/_/g, "/");
-    const expectedPadded = expected.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expectedPadded));
-  } catch {
-    return false;
-  }
-}
-
-function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Missing Bearer token" });
-  }
-  const token = authHeader.slice(7);
-  if (!verifyJwt(token)) {
-    return res.status(403).json({ error: "Invalid token" });
-  }
-  next();
-}
 
 // =============================================================================
 // BUILT-IN LIVE DATA LAYER
@@ -277,7 +218,7 @@ async function maybeProxyGet(req: express.Request, res: express.Response, backen
   if (!USE_REMOTE_BACKEND) return res.json(fallback());
   try {
     const url = new URL(backendPath, BACKEND_URL);
-    const response = await fetch(url.toString(), { headers: { "x-api-key": API_KEY || "" } });
+    const response = await fetch(url.toString(), { headers: { "x-api-key": process.env.RUST_API_KEY || "" } });
     const text = await response.text();
     try {
       return res.status(response.status).json(JSON.parse(text));
