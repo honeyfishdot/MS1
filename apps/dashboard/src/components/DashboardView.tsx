@@ -18,7 +18,12 @@ import {
   Gauge,
   Activity,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  Globe,
+  Link,
+  ArrowLeftRight,
+  Server,
+  TrendingUp
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -175,22 +180,25 @@ export default function DashboardView({
   const totalNetProfit = metrics?.totalProfitUsd || 0;
   const achievementPct = targetSet > 0 ? Math.round((totalNetProfit / targetSet) * 100) : 0;
 
-  // Compact metrics — derived from real backend data (no fabricated defaults)
-  const totalArbitrageDetected = metrics?.activeTradesCount || 0;
-  const executedCount = metrics?.successfulTradesCount || 0;
+  // New compact metrics — derived from real backend data (no fabricated defaults)
+  const arbitrageDetectedPerHour = metrics?.arbitrageDetectedPerHour ?? metrics?.activeTradesCount ?? 0;
+  const arbitrageExecutedPerHour = metrics?.arbitrageExecutedPerHour ?? metrics?.successfulTradesCount ?? 0;
+  const avgProfitPerArbitrage = metrics && metrics.successfulTradesCount > 0 ? (metrics.totalProfitUsd / metrics.successfulTradesCount) : 0;
   const winRate = metrics && (metrics.successfulTradesCount + metrics.failedTradesCount) > 0
     ? (((metrics.successfulTradesCount) / (metrics.successfulTradesCount + metrics.failedTradesCount)) * 100).toFixed(1)
     : "0.0";
-  const avgProfitPerTrade = metrics && metrics.successfulTradesCount > 0 ? (metrics.totalProfitUsd / metrics.successfulTradesCount) : 0;
-  const avgGasCostPerTrade = metrics?.avgGasCostUsd ?? null;
-  const scanLatencyMs = metrics?.scanLatencyMs ?? null;
-  const avgTradeLatencyMs = metrics?.avgTradeLatencyMs ?? null;
-  const p50LatencyMs = metrics?.p50LatencyMs ?? null;
-  const p95LatencyMs = metrics?.p95LatencyMs ?? null;
-  const p99LatencyMs = metrics?.p99LatencyMs ?? null;
-  const throughputRps = metrics?.throughputRps ?? null;
-  const stageLatency = metrics?.stageLatencyMs;
+  const totalProfitPerHour = metrics?.totalProfitPerHour ?? metrics?.totalProfitUsd ?? 0;
+  const endToEndLatencyMs = metrics?.avgTradeLatencyMs ?? null;
+  const internalLatencyMs = metrics?.internalLatencyMs ?? (metrics?.stageLatencyMs ? metrics.stageLatencyMs.detection + metrics.stageLatencyMs.decision + metrics.stageLatencyMs.simulation + metrics.stageLatencyMs.signing : null);
+  const externalLatencyMs = metrics?.externalLatencyMs ?? (metrics?.stageLatencyMs ? metrics.stageLatencyMs.bundle + metrics.stageLatencyMs.relay + metrics.stageLatencyMs.inclusion : null);
   const mevAttackPct = metrics?.mevAttackPct ?? null;
+  const frontRunPct = mevAttackPct !== null ? (100 - mevAttackPct).toFixed(2) : null;
+  const overallSecurityPct = metrics?.securityScore ?? null;
+  const regionsCovered = metrics?.regionsCovered ?? null;
+  const chainsCovered = metrics?.chainsCovered ?? null;
+  const pairsCovered = metrics?.pairsCovered ?? null;
+  const dexesCovered = metrics?.dexesCovered ?? null;
+  const stageLatency = metrics?.stageLatencyMs;
 
   return (
     <div className="space-y-6 animate-fadeIn" id="dashboard-view">
@@ -261,42 +269,59 @@ export default function DashboardView({
         </div>
       </div>
 
+
       {/* Compact Metrics Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
         
-        {/* Metric 1: Total Arbitrage Detected */}
-        <div className={styles.card} id="metric-detected" title="Arbitrage loops scanned: Total number of cross-DEX arbitrage opportunities detected by the scanning engine. This includes all potential profit routes analyzed across multiple decentralized exchanges.">
+        {/* Metric 1: Arbitrage Detected/hr */}
+        <div className={styles.card} id="metric-detected-hr" title="Arbitrage Detected per Hour: Total number of cross-DEX arbitrage opportunities detected by the scanning engine per hour. Higher values indicate more market inefficiencies being identified.">
           <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Detected</span>
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Detected/hr</span>
             <div className="p-1 bg-teal-500/10 rounded text-teal-400">
               <Activity className="h-3 w-3" />
             </div>
           </div>
           <div className="mt-2.5">
             <span className={`text-lg font-mono font-bold tracking-tight ${styles.textWhite}`}>
-              {totalArbitrageDetected.toLocaleString()}
+              {arbitrageDetectedPerHour.toLocaleString()}
             </span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Arb loops scanned</p>
+          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Arb loops/hr</p>
         </div>
 
-        {/* Metric 2: Executed */}
-        <div className={styles.card} id="metric-executed" title="Successful swaps: Number of arbitrage trades that completed without reverting. Each executed trade represents a profitable cross-DEX swap with no gas waste or failed transactions.">
+        {/* Metric 2: Arbitrage Executed/hr */}
+        <div className={styles.card} id="metric-executed-hr" title="Arbitrage Executed per Hour: Number of arbitrage trades that completed successfully per hour. Each executed trade represents a profitable cross-DEX swap with no gas waste or failed transactions.">
           <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Executed</span>
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Executed/hr</span>
             <div className="p-1 bg-emerald-500/10 rounded text-emerald-400">
               <ArrowUpRight className="h-3 w-3" />
             </div>
           </div>
           <div className="mt-2.5">
             <span className={`text-lg font-mono font-bold tracking-tight ${styles.textWhite}`}>
-              {executedCount}
+              {arbitrageExecutedPerHour}
             </span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Successful swaps</p>
+          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Successful swaps/hr</p>
         </div>
 
-        {/* Metric 3: Win Rate */}
+        {/* Metric 3: Avg Profit per Arbitrage */}
+        <div className={styles.card} id="metric-avg-profit" title="Average Profit per Arbitrage: Mean net profit per successful arbitrage trade after gas costs. Calculated as (total profit USD / successful trades). Higher values indicate more profitable routing strategies.">
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Avg Profit</span>
+            <div className="p-1 bg-sky-500/10 rounded text-sky-400">
+              <DollarSign className="h-3 w-3" />
+            </div>
+          </div>
+          <div className="mt-2.5">
+            <span className={`text-lg font-mono font-bold tracking-tight ${styles.textWhite}`}>
+              {formatCurrency(avgProfitPerArbitrage)}
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Net yield per route</p>
+        </div>
+
+        {/* Metric 4: Win Rate */}
         <div className={styles.card} id="metric-winrate" title="Win Rate: Percentage of trades that completed successfully without reverting. Calculated as (successful trades / total trades) × 100. Higher is better — indicates consistent profitable execution.">
           <div className="flex items-center justify-between">
             <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Win Rate</span>
@@ -312,55 +337,71 @@ export default function DashboardView({
           <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Zero-reversion sweeps</p>
         </div>
 
-        {/* Metric 4: Avg Profit per Trade */}
-        <div className={styles.card} id="metric-avg-profit" title="Average Profit: Mean net profit per successful arbitrage trade after gas costs. Calculated as (total profit USD / successful trades). Higher values indicate more profitable routing strategies.">
+        {/* Metric 5: Total Profit/hr */}
+        <div className={styles.card} id="metric-profit-hr" title="Total Profit per Hour: Cumulative net profit accumulated across all flash-loan sweeps per hour. Higher values indicate higher throughput of profitable arbitrage execution.">
           <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Avg Profit</span>
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Profit/hr</span>
+            <div className="p-1 bg-emerald-500/10 rounded text-emerald-400">
+              <TrendingUp className="h-3 w-3" />
+            </div>
+          </div>
+          <div className="mt-2.5">
+            <span className={`text-lg font-mono font-bold tracking-tight text-emerald-400`}>
+              {formatCurrency(totalProfitPerHour)}
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Hourly yield</p>
+        </div>
+
+        {/* Metric 6: End-to-End Latency */}
+        <div className={styles.card} id="metric-e2e-latency" title="End-to-End Latency: Mean total execution time per arbitrage trade from detection to on-chain inclusion. Lower values indicate faster trade completion and reduced MEV exposure.">
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>E2E Latency</span>
+            <div className="p-1 bg-indigo-500/10 rounded text-indigo-400">
+              <Activity className="h-3 w-3" />
+            </div>
+          </div>
+          <div className="mt-2.5">
+            <span className={`text-lg font-mono font-bold tracking-tight text-indigo-400`}>
+              {endToEndLatencyMs !== null ? `${endToEndLatencyMs.toFixed(2)}ms` : '—'}
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Full execution time</p>
+        </div>
+
+        {/* Metric 7: Internal Latency */}
+        <div className={styles.card} id="metric-internal-latency" title="Internal Latency: Sum of detection, decision, simulation, and signing stages. Measures the time spent within the system before submitting to the mempool.">
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Internal Latency</span>
             <div className="p-1 bg-sky-500/10 rounded text-sky-400">
-              <DollarSign className="h-3 w-3" />
+              <Gauge className="h-3 w-3" />
             </div>
           </div>
           <div className="mt-2.5">
-            <span className={`text-lg font-mono font-bold tracking-tight ${styles.textWhite}`}>
-              {formatCurrency(avgProfitPerTrade)}
+            <span className={`text-lg font-mono font-bold tracking-tight text-sky-400`}>
+              {internalLatencyMs !== null ? `${internalLatencyMs.toFixed(3)}ms` : '—'}
             </span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Net yield per route</p>
+          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Pre-submit processing</p>
         </div>
 
-        {/* Metric 5: Avg Gas Cost per Trade */}
-        <div className={styles.card} id="metric-avg-gas" title="Average Gas Cost: Mean transaction fee paid per arbitrage trade on Arbitrum L2. Lower costs increase net profit margins. This metric helps optimize trade sizing and execution timing.">
+        {/* Metric 8: External Latency */}
+        <div className={styles.card} id="metric-external-latency" title="External Latency: Sum of bundle, relay, and inclusion stages. Measures the time from submission to on-chain confirmation.">
           <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Avg Gas Cost</span>
-            <div className="p-1 bg-rose-500/10 rounded text-rose-400">
-              <Zap className="h-3 w-3" />
-            </div>
-          </div>
-          <div className="mt-2.5">
-            <span className={`text-lg font-mono font-bold tracking-tight text-rose-400`}>
-              {avgGasCostPerTrade !== null ? formatCurrency(avgGasCostPerTrade) : '—'}
-            </span>
-          </div>
-          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">L2 Arbitrum gas avg</p>
-        </div>
-
-        {/* Metric 6: Scan Latency */}
-        <div className={styles.card} id="metric-latency" title="Scan Latency: Time taken to scan mempool and detect arbitrage opportunities. Lower latency means faster opportunity detection and execution. Critical for competitive arbitrage in volatile markets.">
-          <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Scan Latency</span>
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>External Latency</span>
             <div className="p-1 bg-amber-500/10 rounded text-amber-400">
               <Gauge className="h-3 w-3" />
             </div>
           </div>
           <div className="mt-2.5">
             <span className={`text-lg font-mono font-bold tracking-tight text-amber-400`}>
-              {scanLatencyMs !== null ? `${scanLatencyMs}ms` : '—'}
+              {externalLatencyMs !== null ? `${externalLatencyMs.toFixed(3)}ms` : '—'}
             </span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Mempool scan speed</p>
+          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">On-chain confirmation</p>
         </div>
 
-        {/* Metric 7: Security */}
+        {/* Metric 9: Security */}
         <div className={`${styles.card} col-span-2 sm:col-span-1 xl:col-span-1`} id="metric-security" title="Security Status: MEV attack prevention rate and frontrunning protection. Shows percentage of malicious relay attempts blocked. 100% protection ensures safe transaction ordering and prevents sandwich attacks.">
           <div className="flex items-center justify-between">
             <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Security</span>
@@ -372,74 +413,83 @@ export default function DashboardView({
             <div className={`text-[11px] font-mono font-bold ${styles.textWhite}`}>
               MEV Attack: <span className="text-teal-400">{mevAttackPct !== null ? `${mevAttackPct.toFixed(2)}%` : '—'}</span>
             </div>
-          <div className="text-[10px] font-mono font-medium text-slate-400 mt-0.5 leading-none">
-               Frontrun: <span className="text-emerald-400">{mevAttackPct !== null ? `${(100 - mevAttackPct).toFixed(2)}%` : '—'}</span>
-             </div>
-           </div>
-           <p className="text-[9px] text-slate-500 mt-1 font-mono leading-none truncate">
-             {mevAttackPct !== null ? `Live MEV block rate: ${(100 - mevAttackPct).toFixed(2)}%` : 'Awaiting live data'}
-           </p>
+            <div className="text-[10px] font-mono font-medium text-slate-400 mt-0.5 leading-none">
+              Frontrun: <span className="text-emerald-400">{frontRunPct !== null ? `${frontRunPct}%` : '—'}</span>
+            </div>
+            <div className="text-[10px] font-mono font-medium text-slate-400 mt-0.5 leading-none">
+              Security: <span className="text-teal-400">{overallSecurityPct !== null ? `${overallSecurityPct}%` : '—'}</span>
+            </div>
+          </div>
+          <p className="text-[9px] text-slate-500 mt-1 font-mono leading-none truncate">
+            {mevAttackPct !== null ? `Live MEV block rate: ${(100 - mevAttackPct).toFixed(2)}%` : 'Awaiting live data'}
+          </p>
         </div>
 
-        {/* Metric 8: Avg Trade Latency */}
-        <div className={styles.card} id="metric-avg-trade-latency" title="Average Trade Latency: Mean end-to-end execution time per arbitrage trade in milliseconds. Lower values indicate faster trade completion and reduced MEV exposure.">
+        {/* Metric 10: Regions Covered */}
+        <div className={styles.card} id="metric-regions" title="Regions Covered: Number of geographic regions where arbitrage opportunities are being scanned and executed. Broader coverage increases the diversity of inefficiencies captured.">
           <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Avg Trade Latency</span>
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Regions</span>
+            <div className="p-1 bg-teal-500/10 rounded text-teal-400">
+              <Globe className="h-3 w-3" />
+            </div>
+          </div>
+          <div className="mt-2.5">
+            <span className={`text-lg font-mono font-bold tracking-tight ${styles.textWhite}`}>
+              {regionsCovered !== null ? regionsCovered : '—'}
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Active regions</p>
+        </div>
+
+        {/* Metric 11: Chains Covered */}
+        <div className={styles.card} id="metric-chains" title="Chains Covered: Number of blockchain networks actively monitored for arbitrage opportunities. Multi-chain coverage enables cross-chain inefficiency capture.">
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Chains</span>
             <div className="p-1 bg-indigo-500/10 rounded text-indigo-400">
-              <Activity className="h-3 w-3" />
+              <Link className="h-3 w-3" />
             </div>
           </div>
           <div className="mt-2.5">
-            <span className={`text-lg font-mono font-bold tracking-tight text-indigo-400`}>
-              {avgTradeLatencyMs !== null ? `${avgTradeLatencyMs.toFixed(2)}ms` : '—'}
+            <span className={`text-lg font-mono font-bold tracking-tight ${styles.textWhite}`}>
+              {chainsCovered !== null ? chainsCovered : '—'}
             </span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">End-to-end execution</p>
+          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Active networks</p>
         </div>
 
-        {/* Metric 9: P50/P95/P99 Latency */}
-        <div className={`${styles.card} col-span-2 sm:col-span-1 xl:col-span-2`} id="metric-percentile-latency" title="Latency Percentiles: P50 (median), P95, and P99 execution latencies. Lower percentiles mean more consistent and predictable trade execution timing.">
+        {/* Metric 12: Pairs Covered */}
+        <div className={styles.card} id="metric-pairs" title="Pairs Covered: Number of unique token trading pairs being monitored across all DEXes. More pairs increase the surface area for arbitrage detection.">
           <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Latency Percentiles</span>
-            <div className="p-1 bg-violet-500/10 rounded text-violet-400">
-              <Gauge className="h-3 w-3" />
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Pairs</span>
+            <div className="p-1 bg-purple-500/10 rounded text-purple-400">
+              <ArrowLeftRight className="h-3 w-3" />
             </div>
           </div>
-          <div className="mt-2 space-y-0.5">
-            <div className="flex justify-between text-[10px] font-mono">
-              <span className="text-slate-400">P50</span>
-              <span className="text-violet-300 font-bold">{p50LatencyMs !== null ? `${p50LatencyMs.toFixed(3)}ms` : '—'}</span>
-            </div>
-            <div className="flex justify-between text-[10px] font-mono">
-              <span className="text-slate-400">P95</span>
-              <span className="text-violet-300 font-bold">{p95LatencyMs !== null ? `${p95LatencyMs.toFixed(3)}ms` : '—'}</span>
-            </div>
-            <div className="flex justify-between text-[10px] font-mono">
-              <span className="text-slate-400">P99</span>
-              <span className="text-violet-300 font-bold">{p99LatencyMs !== null ? `${p99LatencyMs.toFixed(3)}ms` : '—'}</span>
-            </div>
+          <div className="mt-2.5">
+            <span className={`text-lg font-mono font-bold tracking-tight ${styles.textWhite}`}>
+              {pairsCovered !== null ? pairsCovered : '—'}
+            </span>
           </div>
-          <p className="text-[9px] text-slate-500 mt-1 font-mono leading-none">Execution latency distribution</p>
+          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Token pairs</p>
         </div>
 
-        {/* Metric 10: Throughput RPS */}
-        <div className={styles.card} id="metric-throughput" title="Throughput: Estimated requests processed per second based on current scan latency. Higher throughput means more opportunities analyzed per unit time.">
+        {/* Metric 13: DEXes Covered */}
+        <div className={styles.card} id="metric-dexes" title="DEXes Covered: Number of Decentralized Exchanges (DEXes) integrated for route optimization and execution. More DEXes enable better price discovery and routing efficiency.">
           <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>Throughput</span>
+            <span className={`text-[10px] font-extrabold uppercase tracking-wider ${styles.textMuted}`}>DEXes</span>
             <div className="p-1 bg-cyan-500/10 rounded text-cyan-400">
-              <RefreshCw className="h-3 w-3" />
+              <Server className="h-3 w-3" />
             </div>
           </div>
           <div className="mt-2.5">
-            <span className={`text-lg font-mono font-bold tracking-tight text-cyan-400`}>
-              {throughputRps !== null ? `${throughputRps} rps` : '—'}
+            <span className={`text-lg font-mono font-bold tracking-tight ${styles.textWhite}`}>
+              {dexesCovered !== null ? dexesCovered : '—'}
             </span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">Scans per second</p>
+          <p className="text-[10px] text-slate-500 mt-1 font-mono leading-none">DEX routers</p>
         </div>
 
       </div>
-
       {/* Stage Latency Breakdown */}
       {stageLatency && (
         <div className={styles.chartBg} id="stage-latency-breakdown">
@@ -450,7 +500,7 @@ export default function DashboardView({
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            {[
+            {([
               { key: 'detection', label: 'Detection', color: 'bg-blue-500' },
               { key: 'decision', label: 'Decision', color: 'bg-purple-500' },
               { key: 'simulation', label: 'Simulation', color: 'bg-amber-500' },
@@ -458,15 +508,20 @@ export default function DashboardView({
               { key: 'bundle', label: 'Bundle', color: 'bg-teal-500' },
               { key: 'relay', label: 'Relay', color: 'bg-orange-500' },
               { key: 'inclusion', label: 'Inclusion', color: 'bg-emerald-500' },
-            ].map(stage => (
-              <div key={stage.key} className={`${styles.card} !p-3`}>
-                <div className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">{stage.label}</div>
-                <div className={`text-sm font-mono font-bold ${styles.textWhite} mt-1`}>
-                  {(stageLatency as any)[stage.key]?.toFixed(3) ?? '—'}ms
+            ] as const).map((stage) => {
+              const latencyValues = Object.values(stageLatency).filter((v): v is number => typeof v === 'number');
+              const maxLatency = latencyValues.length > 0 ? Math.max(...latencyValues) : 1;
+              const value = stageLatency[stage.key];
+              return (
+                <div key={stage.key} className={`${styles.card} !p-3`}>
+                  <div className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">{stage.label}</div>
+                  <div className={`text-sm font-mono font-bold ${styles.textWhite} mt-1`}>
+                    {value != null ? value.toFixed(3) : '—'}ms
+                  </div>
+                  <div className={`h-1 rounded-full ${stage.color} mt-2 opacity-60`} style={{ width: `${Math.min(100, ((value || 0) / maxLatency) * 100)}%` }} />
                 </div>
-                <div className={`h-1 rounded-full ${stage.color} mt-2 opacity-60`} style={{ width: `${Math.min(100, ((stageLatency as any)[stage.key] || 0) / Math.max(...Object.values(stageLatency)) * 100)}%` }} />
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

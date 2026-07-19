@@ -106,6 +106,15 @@ export interface AggregatedMetrics {
   efficiencyScore?: number;
   velocityScore?: number;
   securityScore?: number;
+  arbitrageDetectedPerHour?: number;
+  arbitrageExecutedPerHour?: number;
+  totalProfitPerHour?: number;
+  internalLatencyMs?: number;
+  externalLatencyMs?: number;
+  regionsCovered?: number;
+  chainsCovered?: number;
+  pairsCovered?: number;
+  dexesCovered?: number;
 }
 
 export interface CustomWalletItem {

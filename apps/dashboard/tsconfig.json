@@ -22,5 +22,10 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "tailwind.config.js",
+    "vite.config.ts",
+    "server.ts"
+  ]
 }

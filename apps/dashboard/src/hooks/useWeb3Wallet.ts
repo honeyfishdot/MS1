@@ -64,6 +64,7 @@ export function useWeb3Wallet(): Web3WalletState & Web3WalletActions {
     let cancelled = false;
     (async () => {
       try {
+        // @ts-ignore - ethers is optional and lazy-loaded; type declarations may not be installed
         const mod = await import('ethers');
         if (!cancelled) setEthers(mod);
       } catch {

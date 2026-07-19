@@ -13,9 +13,10 @@
 
 import React, { useState } from 'react';
 import { Wallet, Plus, Trash2, ShieldCheck } from 'lucide-react';
-import { CustomWalletItem, DashboardSettings } from '../types';
+import { CustomWalletItem, DashboardSettings, WalletState } from '../types';
 
 interface WalletViewProps {
+  wallet: WalletState;
   settings: DashboardSettings;
   isUpdating: boolean;
   themeMode: 'dark' | 'bright' | 'dusty-blue';

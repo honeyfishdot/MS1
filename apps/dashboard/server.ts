@@ -249,38 +249,39 @@ app.post("/api/deployment/reset", (req, res) => {
 });
 
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    // Vite development server - removed for production to avoid runtime dependency
-    // In production, static files are served directly from dist/
-  } else {
-    const distPath = path.join(__dirname, "..", "dist");
+  const distPath = path.join(__dirname, "..", "dist");
 
-    app.use((req, res, next) => {
-      if (req.method !== "GET" && req.method !== "HEAD") return next();
-      const safePath = req.path.split("?")[0];
-      const filePath = path.join(distPath, safePath === "/" ? "index.html" : safePath);
-      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-        const ext = path.extname(filePath);
-        const contentType = ext === ".js" ? "application/javascript" :
-                           ext === ".css" ? "text/css" :
-                           ext === ".html" ? "text/html" :
-                           ext === ".json" ? "application/json" :
-                           ext === ".png" ? "image/png" :
-                           ext === ".svg" ? "image/svg+xml" :
-                           "application/octet-stream";
-        res.setHeader("Content-Type", contentType);
-        const stream = fs.createReadStream(filePath);
-        stream.pipe(res);
-        stream.on("error", () => next());
-      } else {
-        next();
-      }
-    });
-
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+  if (!fs.existsSync(distPath)) {
+    console.warn(`⚠️  Frontend build not found at ${distPath}. Run "npm run build" first.`);
   }
+
+  // Serve static frontend assets in both dev and production
+  app.use((req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    const safePath = req.path.split("?")[0];
+    const filePath = path.join(distPath, safePath === "/" ? "index.html" : safePath);
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const ext = path.extname(filePath);
+      const contentType = ext === ".js" ? "application/javascript" :
+                         ext === ".css" ? "text/css" :
+                         ext === ".html" ? "text/html" :
+                         ext === ".json" ? "application/json" :
+                         ext === ".png" ? "image/png" :
+                         ext === ".svg" ? "image/svg+xml" :
+                         "application/octet-stream";
+      res.setHeader("Content-Type", contentType);
+      const stream = fs.createReadStream(filePath);
+      stream.pipe(res);
+      stream.on("error", () => next());
+    } else {
+      next();
+    }
+  });
+
+  // SPA fallback — all non-API routes serve index.html
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(distPath, "index.html"));
+  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Allbright Dashboard running at http://0.0.0.0:${PORT}`);

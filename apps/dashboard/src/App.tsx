@@ -381,7 +381,7 @@ export default function App() {
 
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <Header
-          wallet={wallet || { totalValueUsd: 0 }}
+          wallet={wallet || { totalValueUsd: 0, address: '', network: '', balances: {}, transactions: [], connected: true }}
           themeMode={themeMode}
           onThemeChange={setThemeMode}
           copilotOpen={copilotOpen}
@@ -415,7 +415,7 @@ export default function App() {
                 <CommanderView settings={settingsWithLocalMode} onUpdateSettings={handleUpdateSettings} convertAndFormat={convertAndFormat} themeMode={themeMode} />
               )}
               {activeTab === 'wallet' && (
-                <WalletView wallet={wallet} settings={settingsWithLocalMode} onDeposit={handleDeposit} onWithdraw={handleWithdraw} onTransferProfit={handleTransferProfit} transferringProfit={transferringProfit} isUpdating={isWalletUpdating} themeMode={themeMode} convertAndFormat={convertAndFormat} walletsList={walletsList} onUpdateWalletsList={setWalletsList} onUpdateSettings={handleUpdateSettings} />
+                <WalletView wallet={wallet} settings={settingsWithLocalMode} isUpdating={isWalletUpdating} themeMode={themeMode} convertAndFormat={convertAndFormat} walletsList={walletsList} onUpdateWalletsList={setWalletsList} onUpdateSettings={handleUpdateSettings} />
               )}
               {activeTab === 'compliance' && (
                 <ComplianceView governanceCards={governanceCards} themeMode={themeMode} />
