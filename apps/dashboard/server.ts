@@ -232,6 +232,45 @@ async function maybeProxyGet(req: express.Request, res: express.Response, backen
   }
 }
 
+// POST proxy (used for deploy / deployment mutations). When USE_REMOTE_BACKEND
+// is true, forwards the request body to the Rust backend so modes like
+// "autonomous" actually drive the real copilot workflow. Falls back to the
+// provided simulated result on any failure so the UI still responds.
+async function maybeProxyPost(req: express.Request, res: express.Response, backendPath: string, fallback: () => any) {
+  if (!USE_REMOTE_BACKEND) return res.json(fallback());
+  try {
+    const url = new URL(backendPath, BACKEND_URL);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": process.env.RUST_API_KEY || "" },
+      body: JSON.stringify(req.body || {}),
+    });
+    const text = await response.text();
+    try {
+      return res.status(response.status).json(JSON.parse(text));
+    } catch {
+      return res.status(response.status).type("text/plain").send(text);
+    }
+  } catch (err: any) {
+    console.warn(`Remote backend unreachable for ${backendPath}, using built-in result:`, err.message);
+    return res.json(fallback());
+  }
+}
+
+// Simulated deploy result for self-contained mode.
+function deployResult(body: any, stage: string, mode: string) {
+  return {
+    status: "queued",
+    stage,
+    mode,
+    source: "builtin",
+    ok: true,
+    label: "deploy",
+    received: body,
+  };
+}
+
+
 app.get("/api/health", (req, res) => {
   res.json(buildReadyHealth());
 });
@@ -274,11 +313,16 @@ app.post("/api/wallet/withdraw", (req, res) => res.json({ wallet: buildWallet(),
 app.post("/api/wallet/transfer-profit", (req, res) => res.json({ transferredAmountUsdc: round(jitter(120, 0.2), 2), ...mutationResult(req.body, "transfer") }));
 app.post("/api/auto-transfer/trigger", (req, res) => res.json({ triggered: true, ...mutationResult(req.body, "trigger") }));
 app.post("/api/copilot", (req, res) => res.json({ reply: "Copilot is operating in local mode. Connect a model API key for live assistance.", ...mutationResult(req.body, "copilot") }));
-app.post("/api/deploy", (req, res) => res.json({ status: "queued", ...mutationResult(req.body, "deploy") }));
-app.post("/api/deployment/authorize", (req, res) => res.json({ authorized: true, ...mutationResult(req.body, "authorize") }));
-app.post("/api/deployment/run", (req, res) => res.json({ status: "running", ...mutationResult(req.body, "run") }));
-app.post("/api/deployment/approve", (req, res) => res.json({ approved: true, ...mutationResult(req.body, "approve") }));
-app.post("/api/deployment/reset", (req, res) => res.json({ reset: true, ...mutationResult(req.body, "reset") }));
+app.post("/api/deploy", (req, res) => {
+  const mode = (req.body && req.body.mode) || "manual";
+  // Remote mode: proxy to the Rust backend so Autonomous mode actually
+  // drives the copilot workflow. Self-contained: simulated result.
+  return maybeProxyPost(req, res, "/api/deploy", () => deployResult(req.body, "paper", mode));
+});
+app.post("/api/deployment/authorize", (req, res) => maybeProxyPost(req, res, "/api/deployment/authorize", () => ({ authorized: true, source: "builtin", label: "authorize", received: req.body })));
+app.post("/api/deployment/run", (req, res) => maybeProxyPost(req, res, "/api/deployment/run", () => ({ status: "running", source: "builtin", label: "run", received: req.body })));
+app.post("/api/deployment/approve", (req, res) => maybeProxyPost(req, res, "/api/deployment/approve", () => ({ approved: true, source: "builtin", label: "approve", received: req.body })));
+app.post("/api/deployment/reset", (req, res) => maybeProxyPost(req, res, "/api/deployment/reset", () => ({ reset: true, source: "builtin", label: "reset", received: req.body })));
 
 async function startServer() {
   console.log('[SERVER] Starting dashboard server...');
