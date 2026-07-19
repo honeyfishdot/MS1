@@ -1,5 +1,5 @@
 # Minimal working Dockerfile
-# Build cache buster: 2026-07-19-white-page-fix
+# Build cache buster: 2026-07-19-white-page-fix-v3
 
 FROM node:20-alpine AS builder
 
@@ -11,9 +11,11 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
+# Copy package files first for better layer caching
 COPY apps/dashboard/package*.json ./
 RUN npm install --legacy-peer-deps
 
+# Copy source and build
 COPY apps/dashboard/ .
 RUN npm run build
 
