@@ -37,7 +37,9 @@ const ENV_EXECUTOR_ADDRESS = import.meta.env.VITE_EXECUTOR_ADDRESS || '0xfE42843
 // The Rust backend (gRPC :50051 / HTTP :3001) provides real 78 KPI telemetry
 // with sub-0.1ms P50 latency. The Express simulation (:3000) is for UI dev only.
 // The dashboard server (:3002) has its own built-in API endpoints.
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3002';
+// In production, the Express server serves both API and static files on the same origin,
+// so the API base defaults to empty string (relative URLs like /api/metrics).
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');

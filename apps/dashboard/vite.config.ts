@@ -8,8 +8,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(__dirname), '');
 
   // Guaranteed build-time fallbacks so the SPA never crashes on a missing var.
-  // In production the Express server proxies /api, so a relative base is correct.
-  const VITE_API_BASE = env.VITE_API_BASE || '/';
+  // In production the Express server serves both API and static files on the same origin,
+  // so the API base must be empty string (not '/') to avoid '//api/...' protocol-relative URLs.
+  const VITE_API_BASE = env.VITE_API_BASE || '';
   const VITE_ENGINE_MODE = env.VITE_ENGINE_MODE || 'simulation';
 
   return {

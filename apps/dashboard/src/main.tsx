@@ -24,8 +24,8 @@ if (missing.length > 0) {
 }
 
 // Deploy marker — bumping this forces a fresh frontend rebuild on Render
-// so the white-page fix (commit b3d1217) is included in the deployed bundle.
-console.log('Allbright Dashboard build: 2026-07-19-prod-fix');
+// so the white-page fix (commit b3d1217 + critical CSS + API_BASE fix) is included.
+console.log('Allbright Dashboard build: 2026-07-19-critical-fix-v2');
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {
