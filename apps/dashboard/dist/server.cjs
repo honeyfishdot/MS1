@@ -266,15 +266,14 @@ async function startServer() {
     const entry = files.find((f) => f.startsWith("index.")) || files[0];
     return entry || null;
   }
-  const ASSET_JS = discoverAsset("assets", ".js");
-  const ASSET_CSS = discoverAsset("assets", ".css");
-  const CACHE_VERSION = Date.now().toString(36);
-  const JS_URL = ASSET_JS ? `/assets/${ASSET_JS}?v=${CACHE_VERSION}` : null;
-  const CSS_URL = ASSET_CSS ? `/assets/${ASSET_CSS}?v=${CACHE_VERSION}` : null;
-  console.log(`[SERVER] Serving assets \u2014 JS: ${JS_URL ?? "(none)"} CSS: ${CSS_URL ?? "(none)"}`);
+  const ASSET_JS_FILE = discoverAsset("assets", ".js");
+  const ASSET_CSS_FILE = discoverAsset("assets", ".css");
+  const STABLE_JS = "/assets/app.js";
+  const STABLE_CSS = "/assets/app.css";
+  console.log(`[SERVER] Assets \u2014 JS file: ${ASSET_JS_FILE ?? "(none)"} \u2192 ${STABLE_JS} | CSS file: ${ASSET_CSS_FILE ?? "(none)"} \u2192 ${STABLE_CSS}`);
   function renderIndexHtml() {
-    const jsTag = JS_URL ? `<script type="module" crossorigin src="${JS_URL}"></script>` : `<!-- no JS bundle found in dist/assets -->`;
-    const cssTag = CSS_URL ? `<link rel="stylesheet" crossorigin href="${CSS_URL}">` : "";
+    const jsTag = ASSET_JS_FILE ? `<script type="module" crossorigin src="${STABLE_JS}"></script>` : `<!-- no JS bundle found in dist/assets -->`;
+    const cssTag = ASSET_CSS_FILE ? `<link rel="stylesheet" crossorigin href="${STABLE_CSS}">` : "";
     return `<!doctype html>
 <html lang="en">
   <head>
@@ -287,9 +286,8 @@ async function startServer() {
     <div id="root"></div>
     ${jsTag}
     <script>
-      // Last-resort guard: if the module script fails to load (e.g. a 404 on the
-      // hashed bundle), force a single hard reload so a stale cached HTML that
-      // references a deleted file self-heals instead of showing a white page.
+      // Self-heal: if the module script ever fails to load (network blip, etc.),
+      // force ONE hard reload so a transient failure never sticks as a white page.
       window.addEventListener("error", function (e) {
         if (e && e.target && (e.target.tagName === "SCRIPT" || e.target.tagName === "LINK")) {
           if (!sessionStorage.getItem("ab_reload")) {
@@ -302,10 +300,15 @@ async function startServer() {
   </body>
 </html>`;
   }
+  function resolveStableAsset(urlPath) {
+    if (urlPath === STABLE_JS) return ASSET_JS_FILE ? import_path.default.join(distPath, "assets", ASSET_JS_FILE) : null;
+    if (urlPath === STABLE_CSS) return ASSET_CSS_FILE ? import_path.default.join(distPath, "assets", ASSET_CSS_FILE) : null;
+    return null;
+  }
   app.use((req, res, next2) => {
     const safePath = (req.path || "/").split("?")[0];
-    const filePath = import_path.default.join(distPath, safePath === "/" ? "index.html" : safePath);
-    const isHtml = filePath.endsWith(".html") || safePath === "/";
+    const isHtml = safePath === "/" || safePath.endsWith(".html");
+    const isStableAsset = safePath === STABLE_JS || safePath === STABLE_CSS;
     const isHashedAsset = /\/assets\/[^/]+\.(js|css)$/.test(safePath);
     if (isHtml) {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
@@ -314,10 +317,28 @@ async function startServer() {
       res.setHeader("Surrogate-Control", "no-store");
       res.setHeader("CDN-Cache-Control", "no-store");
       res.setHeader("Clear-Site-Data", '"cache"');
-    } else if (isHashedAsset) {
-      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    } else if (isStableAsset || isHashedAsset) {
+      res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
     }
     next2();
+  });
+  app.get(STABLE_JS, (req, res) => {
+    const f = resolveStableAsset(STABLE_JS);
+    if (!f || !fs.existsSync(f)) {
+      res.status(404).end();
+      return;
+    }
+    res.setHeader("Content-Type", "application/javascript");
+    fs.createReadStream(f).pipe(res);
+  });
+  app.get(STABLE_CSS, (req, res) => {
+    const f = resolveStableAsset(STABLE_CSS);
+    if (!f || !fs.existsSync(f)) {
+      res.status(404).end();
+      return;
+    }
+    res.setHeader("Content-Type", "text/css");
+    fs.createReadStream(f).pipe(res);
   });
   app.get("/", (req, res) => {
     res.setHeader("Content-Type", "text/html");
@@ -332,8 +353,7 @@ async function startServer() {
     if (req.method !== "GET" && req.method !== "HEAD") return next2();
     const rawPath = (req.path || "/").split("?")[0];
     if (rawPath === "/" || rawPath.endsWith(".html")) return next2();
-    let safePath = rawPath.replace(/\?v=.*$/, "");
-    const filePath = import_path.default.join(distPath, safePath);
+    const filePath = import_path.default.join(distPath, rawPath);
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = import_path.default.extname(filePath);
       const contentType = ext === ".js" ? "application/javascript" : ext === ".css" ? "text/css" : ext === ".html" ? "text/html" : ext === ".json" ? "application/json" : ext === ".png" ? "image/png" : ext === ".svg" ? "image/svg+xml" : "application/octet-stream";

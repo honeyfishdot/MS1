@@ -302,34 +302,34 @@ async function startServer() {
     console.warn(`⚠️  Frontend build not found at ${distPath}. Run "npm run build" first.`);
   }
 
-  // Cache-buster: discover the ACTUAL built asset filenames on disk at startup
-  // so the served HTML always references the real, existing bundle. We also
-  // append a `?v=<mtime>` query so that even a browser/Cloudflare copy of an
-  // old index.html that somehow survives can never point at a deleted file
-  // (the previous white-page root cause).
+  // STABLE asset strategy (white-page fix):
+  // Vite emits content-hashed filenames (index.<hash>.js) that change every
+  // build. If a browser/Cloudflare copy of an OLD index.html survives, it
+  // points at a now-DELETED hashed file → 100% white page. We solve this by
+  // serving the bundle at STABLE URLs (/assets/app.js, /assets/app.css) that
+  // NEVER change. The server resolves the stable URL to whatever the real
+  // hashed file on disk is. A cached old HTML can therefore never 404.
   function discoverAsset(subdir: string, ext: string): string | null {
     const dir = path.join(distPath, subdir);
     if (!fs.existsSync(dir)) return null;
     const files = fs.readdirSync(dir).filter((f) => f.endsWith(ext));
-    // Pick the entry bundle (contains "index") if present, else the first match.
     const entry = files.find((f) => f.startsWith("index.")) || files[0];
     return entry || null;
   }
-  const ASSET_JS = discoverAsset("assets", ".js");
-  const ASSET_CSS = discoverAsset("assets", ".css");
-  const CACHE_VERSION = Date.now().toString(36);
-  const JS_URL = ASSET_JS ? `/assets/${ASSET_JS}?v=${CACHE_VERSION}` : null;
-  const CSS_URL = ASSET_CSS ? `/assets/${ASSET_CSS}?v=${CACHE_VERSION}` : null;
-  console.log(`[SERVER] Serving assets — JS: ${JS_URL ?? "(none)"} CSS: ${CSS_URL ?? "(none)"}`);
+  const ASSET_JS_FILE = discoverAsset("assets", ".js");
+  const ASSET_CSS_FILE = discoverAsset("assets", ".css");
+  const STABLE_JS = "/assets/app.js";
+  const STABLE_CSS = "/assets/app.css";
+  console.log(`[SERVER] Assets — JS file: ${ASSET_JS_FILE ?? "(none)"} → ${STABLE_JS} | CSS file: ${ASSET_CSS_FILE ?? "(none)"} → ${STABLE_CSS}`);
 
-  // Build a guaranteed-correct index.html on the fly. This removes any dependency
-  // on a stale committed/generated index.html and is immune to asset-hash drift.
+  // Dynamically-generated, always-correct index.html. References the STABLE
+  // asset URLs so it never goes stale, plus a self-heal guard.
   function renderIndexHtml(): string {
-    const jsTag = JS_URL
-      ? `<script type="module" crossorigin src="${JS_URL}"></script>`
+    const jsTag = ASSET_JS_FILE
+      ? `<script type="module" crossorigin src="${STABLE_JS}"></script>`
       : `<!-- no JS bundle found in dist/assets -->`;
-    const cssTag = CSS_URL
-      ? `<link rel="stylesheet" crossorigin href="${CSS_URL}">`
+    const cssTag = ASSET_CSS_FILE
+      ? `<link rel="stylesheet" crossorigin href="${STABLE_CSS}">`
       : "";
     return `<!doctype html>
 <html lang="en">
@@ -343,9 +343,8 @@ async function startServer() {
     <div id="root"></div>
     ${jsTag}
     <script>
-      // Last-resort guard: if the module script fails to load (e.g. a 404 on the
-      // hashed bundle), force a single hard reload so a stale cached HTML that
-      // references a deleted file self-heals instead of showing a white page.
+      // Self-heal: if the module script ever fails to load (network blip, etc.),
+      // force ONE hard reload so a transient failure never sticks as a white page.
       window.addEventListener("error", function (e) {
         if (e && e.target && (e.target.tagName === "SCRIPT" || e.target.tagName === "LINK")) {
           if (!sessionStorage.getItem("ab_reload")) {
@@ -359,14 +358,20 @@ async function startServer() {
 </html>`;
   }
 
-  // Global cache policy. HTML is NEVER cached (so a redeploy that changes the
-  // hashed JS bundle names always pulls a fresh index.html — otherwise browsers
-  // keep a stale index.html pointing at a deleted JS file, which renders a
-  // 100% white page). Hashed JS/CSS are cached hard (immutable).
+  // Map the STABLE asset URL to the real hashed file on disk.
+  function resolveStableAsset(urlPath: string): string | null {
+    if (urlPath === STABLE_JS) return ASSET_JS_FILE ? path.join(distPath, "assets", ASSET_JS_FILE) : null;
+    if (urlPath === STABLE_CSS) return ASSET_CSS_FILE ? path.join(distPath, "assets", ASSET_CSS_FILE) : null;
+    return null;
+  }
+
+  // Global cache policy. HTML is NEVER cached (always pulls fresh index.html).
+  // The stable JS/CSS are content that only changes on a full rebuild, so we
+  // allow a short cache with revalidation.
   app.use((req, res, next) => {
     const safePath = (req.path || "/").split("?")[0];
-    const filePath = path.join(distPath, safePath === "/" ? "index.html" : safePath);
-    const isHtml = filePath.endsWith(".html") || safePath === "/";
+    const isHtml = safePath === "/" || safePath.endsWith(".html");
+    const isStableAsset = safePath === STABLE_JS || safePath === STABLE_CSS;
     const isHashedAsset = /\/assets\/[^/]+\.(js|css)$/.test(safePath);
 
     if (isHtml) {
@@ -374,19 +379,32 @@ async function startServer() {
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
       res.setHeader("Surrogate-Control", "no-store");
-      // Tell Cloudflare/any CDN in front to never cache the HTML.
       res.setHeader("CDN-Cache-Control", "no-store");
       res.setHeader("Clear-Site-Data", "\"cache\"");
-    } else if (isHashedAsset) {
-      // Hashed assets are content-addressed and never change → cache forever.
-      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    } else if (isStableAsset || isHashedAsset) {
+      // Content rarely changes between deploys; short revalidate keeps it fresh.
+      res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
     }
     next();
   });
 
+  // Stable asset routes — always resolve to the current built file.
+  app.get(STABLE_JS, (req, res) => {
+    const f = resolveStableAsset(STABLE_JS);
+    if (!f || !fs.existsSync(f)) { res.status(404).end(); return; }
+    res.setHeader("Content-Type", "application/javascript");
+    fs.createReadStream(f).pipe(res);
+  });
+  app.get(STABLE_CSS, (req, res) => {
+    const f = resolveStableAsset(STABLE_CSS);
+    if (!f || !fs.existsSync(f)) { res.status(404).end(); return; }
+    res.setHeader("Content-Type", "text/css");
+    fs.createReadStream(f).pipe(res);
+  });
+
   // SPA root — serve the dynamically-generated, always-correct index.html.
-  // This MUST run before the static middleware so a literal dist/index.html on
-  // disk is never served (that file goes stale when the asset hash changes).
+  // Must run before the static middleware so a stale dist/index.html on disk
+  // (with an old hashed reference) is never served.
   app.get("/", (req, res) => {
     res.setHeader("Content-Type", "text/html");
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
@@ -397,15 +415,12 @@ async function startServer() {
     res.send(renderIndexHtml());
   });
 
-  // Serve static frontend assets in both dev and production. Strips the ?v= cache
-  // query we append to asset URLs so the real file on disk is found. Skips "/"
-  // (handled by the dynamic HTML route above) and any .html path.
+  // Serve other static frontend assets (images, fonts, sourcemaps, hashed files).
   app.use((req, res, next) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
     const rawPath = (req.path || "/").split("?")[0];
     if (rawPath === "/" || rawPath.endsWith(".html")) return next();
-    let safePath = rawPath.replace(/\?v=.*$/, "");
-    const filePath = path.join(distPath, safePath);
+    const filePath = path.join(distPath, rawPath);
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = path.extname(filePath);
       const contentType = ext === ".js" ? "application/javascript" :
