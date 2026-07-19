@@ -36,6 +36,7 @@ app.use(
 // deleted. If access control is needed later, add it behind an explicit flag.)
 app.use(express.json());
 
+// Deployment marker: 2026-07-19-white-page-fix-v2
 const PORT = parseInt(process.env.PORT || "3002");
 
 // When USE_REMOTE_BACKEND=true the dashboard proxies to the real Rust backend
@@ -280,6 +281,11 @@ app.post("/api/deployment/approve", (req, res) => res.json({ approved: true, ...
 app.post("/api/deployment/reset", (req, res) => res.json({ reset: true, ...mutationResult(req.body, "reset") }));
 
 async function startServer() {
+  console.log('[SERVER] Starting dashboard server...');
+  console.log('[SERVER] NODE_ENV:', process.env.NODE_ENV);
+  console.log('[SERVER] USE_REMOTE_BACKEND:', USE_REMOTE_BACKEND);
+  console.log('[SERVER] PORT:', PORT);
+  
   // Resolve the frontend dist directory.
   // When running `node dist/server.cjs` from apps/dashboard/:
   //   - __dirname = apps/dashboard/dist/  → use __dirname directly
