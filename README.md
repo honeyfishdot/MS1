@@ -4,6 +4,18 @@
 **Architecture:** Multi-Chain (EVM + SVM) Aggregation  
 **Runtime:** Rust + Solidity (Ethereum Smart Contracts)
 
+[![Deploy to Render](https://render.com/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/honeyfishdot/MS1)
+
+> **One-click deploy:** The button above provisions the full stack (dashboard + Rust backend + Redis + Postgres) from `render.yaml` (Render Blueprint). After the first deploy, every `git push` to `main` auto-redeploys the affected services.
+
+### Redeploying after a fix (e.g. white-page fix)
+If the live site is stale, trigger a manual redeploy — no API key required:
+1. Open the Render dashboard → **allbright-dashboard** service.
+2. Click **"Manual Deploy"** (or **"Redeploy"**).
+3. Wait ~2 min; the new build goes live automatically.
+
+The dashboard is **self-contained**: it serves built-in live telemetry even if the Rust backend / DB are still starting, so it always renders.
+
 ## Overview
 
 AllBright C2 is a high-performance arbitrage flash loan engine that aggregates across multiple blockchain networks. It implements a Central Command & Control (C2) server with 100+ specialized AI agents for trading, risk management, security, governance, and infrastructure management.
