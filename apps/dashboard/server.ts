@@ -297,6 +297,7 @@ async function startServer() {
   }
 
   // Serve static frontend assets in both dev and production
+  // Cache-busting: no-cache for HTML, immutable for hashed assets
   app.use((req, res, next) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
     const safePath = req.path.split("?")[0];
@@ -311,6 +312,12 @@ async function startServer() {
                          ext === ".svg" ? "image/svg+xml" :
                          "application/octet-stream";
       res.setHeader("Content-Type", contentType);
+      // Cache-busting: HTML should never be cached, hashed assets can be cached forever
+      if (ext === ".html") {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      } else if (ext === ".js" || ext === ".css") {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      }
       const stream = fs.createReadStream(filePath);
       stream.pipe(res);
       stream.on("error", () => next());
