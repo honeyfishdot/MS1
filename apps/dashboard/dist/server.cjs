@@ -271,7 +271,10 @@ async function startServer() {
       res.setHeader("Surrogate-Control", "no-store");
       res.setHeader("Clear-Site-Data", '"cache"');
     } else if (isHashedAsset) {
-      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      const stats = fs.statSync(filePath);
+      const eTag = `W/${stats.size}-${stats.mtime.getTime()}`;
+      res.setHeader("ETag", eTag);
+      res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
     }
     next();
   });
