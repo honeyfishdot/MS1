@@ -259,7 +259,50 @@ async function startServer() {
   if (!fs.existsSync(distPath)) {
     console.warn(`\u26A0\uFE0F  Frontend build not found at ${distPath}. Run "npm run build" first.`);
   }
-  app.use((req, res, next) => {
+  function discoverAsset(subdir, ext) {
+    const dir = import_path.default.join(distPath, subdir);
+    if (!fs.existsSync(dir)) return null;
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(ext));
+    const entry = files.find((f) => f.startsWith("index.")) || files[0];
+    return entry || null;
+  }
+  const ASSET_JS = discoverAsset("assets", ".js");
+  const ASSET_CSS = discoverAsset("assets", ".css");
+  const CACHE_VERSION = Date.now().toString(36);
+  const JS_URL = ASSET_JS ? `/assets/${ASSET_JS}?v=${CACHE_VERSION}` : null;
+  const CSS_URL = ASSET_CSS ? `/assets/${ASSET_CSS}?v=${CACHE_VERSION}` : null;
+  console.log(`[SERVER] Serving assets \u2014 JS: ${JS_URL ?? "(none)"} CSS: ${CSS_URL ?? "(none)"}`);
+  function renderIndexHtml() {
+    const jsTag = JS_URL ? `<script type="module" crossorigin src="${JS_URL}"></script>` : `<!-- no JS bundle found in dist/assets -->`;
+    const cssTag = CSS_URL ? `<link rel="stylesheet" crossorigin href="${CSS_URL}">` : "";
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Allbright Arbitrage Terminal</title>
+    ${cssTag}
+  </head>
+  <body>
+    <div id="root"></div>
+    ${jsTag}
+    <script>
+      // Last-resort guard: if the module script fails to load (e.g. a 404 on the
+      // hashed bundle), force a single hard reload so a stale cached HTML that
+      // references a deleted file self-heals instead of showing a white page.
+      window.addEventListener("error", function (e) {
+        if (e && e.target && (e.target.tagName === "SCRIPT" || e.target.tagName === "LINK")) {
+          if (!sessionStorage.getItem("ab_reload")) {
+            sessionStorage.setItem("ab_reload", "1");
+            location.reload(true);
+          }
+        }
+      }, true);
+    </script>
+  </body>
+</html>`;
+  }
+  app.use((req, res, next2) => {
     const safePath = (req.path || "/").split("?")[0];
     const filePath = import_path.default.join(distPath, safePath === "/" ? "index.html" : safePath);
     const isHtml = filePath.endsWith(".html") || safePath === "/";
@@ -269,35 +312,48 @@ async function startServer() {
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
       res.setHeader("Surrogate-Control", "no-store");
+      res.setHeader("CDN-Cache-Control", "no-store");
       res.setHeader("Clear-Site-Data", '"cache"');
     } else if (isHashedAsset) {
-      const stats = fs.statSync(filePath);
-      const eTag = `W/${stats.size}-${stats.mtime.getTime()}`;
-      res.setHeader("ETag", eTag);
-      res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     }
-    next();
+    next2();
   });
-  app.use((req, res, next) => {
-    if (req.method !== "GET" && req.method !== "HEAD") return next();
-    const safePath = (req.path || "/").split("?")[0];
-    const filePath = import_path.default.join(distPath, safePath === "/" ? "index.html" : safePath);
+  app.get("/", (req, res) => {
+    res.setHeader("Content-Type", "text/html");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.send(renderIndexHtml());
+  });
+  app.use((req, res, next2) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next2();
+    const rawPath = (req.path || "/").split("?")[0];
+    if (rawPath === "/" || rawPath.endsWith(".html")) return next2();
+    let safePath = rawPath.replace(/\?v=.*$/, "");
+    const filePath = import_path.default.join(distPath, safePath);
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = import_path.default.extname(filePath);
       const contentType = ext === ".js" ? "application/javascript" : ext === ".css" ? "text/css" : ext === ".html" ? "text/html" : ext === ".json" ? "application/json" : ext === ".png" ? "image/png" : ext === ".svg" ? "image/svg+xml" : "application/octet-stream";
       res.setHeader("Content-Type", contentType);
       const stream = fs.createReadStream(filePath);
       stream.pipe(res);
-      stream.on("error", () => next());
+      stream.on("error", () => next2());
     } else {
-      next();
+      next2();
     }
   });
   app.get("*", (req, res) => {
+    if ((req.path || "").startsWith("/api/")) return next();
+    res.setHeader("Content-Type", "text/html");
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
-    res.sendFile(import_path.default.join(distPath, "index.html"));
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.send(renderIndexHtml());
   });
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Allbright Dashboard running at http://0.0.0.0:${PORT}`);

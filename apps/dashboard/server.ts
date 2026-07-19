@@ -302,11 +302,67 @@ async function startServer() {
     console.warn(`⚠️  Frontend build not found at ${distPath}. Run "npm run build" first.`);
   }
 
+  // Cache-buster: discover the ACTUAL built asset filenames on disk at startup
+  // so the served HTML always references the real, existing bundle. We also
+  // append a `?v=<mtime>` query so that even a browser/Cloudflare copy of an
+  // old index.html that somehow survives can never point at a deleted file
+  // (the previous white-page root cause).
+  function discoverAsset(subdir: string, ext: string): string | null {
+    const dir = path.join(distPath, subdir);
+    if (!fs.existsSync(dir)) return null;
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(ext));
+    // Pick the entry bundle (contains "index") if present, else the first match.
+    const entry = files.find((f) => f.startsWith("index.")) || files[0];
+    return entry || null;
+  }
+  const ASSET_JS = discoverAsset("assets", ".js");
+  const ASSET_CSS = discoverAsset("assets", ".css");
+  const CACHE_VERSION = Date.now().toString(36);
+  const JS_URL = ASSET_JS ? `/assets/${ASSET_JS}?v=${CACHE_VERSION}` : null;
+  const CSS_URL = ASSET_CSS ? `/assets/${ASSET_CSS}?v=${CACHE_VERSION}` : null;
+  console.log(`[SERVER] Serving assets — JS: ${JS_URL ?? "(none)"} CSS: ${CSS_URL ?? "(none)"}`);
+
+  // Build a guaranteed-correct index.html on the fly. This removes any dependency
+  // on a stale committed/generated index.html and is immune to asset-hash drift.
+  function renderIndexHtml(): string {
+    const jsTag = JS_URL
+      ? `<script type="module" crossorigin src="${JS_URL}"></script>`
+      : `<!-- no JS bundle found in dist/assets -->`;
+    const cssTag = CSS_URL
+      ? `<link rel="stylesheet" crossorigin href="${CSS_URL}">`
+      : "";
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Allbright Arbitrage Terminal</title>
+    ${cssTag}
+  </head>
+  <body>
+    <div id="root"></div>
+    ${jsTag}
+    <script>
+      // Last-resort guard: if the module script fails to load (e.g. a 404 on the
+      // hashed bundle), force a single hard reload so a stale cached HTML that
+      // references a deleted file self-heals instead of showing a white page.
+      window.addEventListener("error", function (e) {
+        if (e && e.target && (e.target.tagName === "SCRIPT" || e.target.tagName === "LINK")) {
+          if (!sessionStorage.getItem("ab_reload")) {
+            sessionStorage.setItem("ab_reload", "1");
+            location.reload(true);
+          }
+        }
+      }, true);
+    </script>
+  </body>
+</html>`;
+  }
+
   // Global cache policy. HTML is NEVER cached (so a redeploy that changes the
   // hashed JS bundle names always pulls a fresh index.html — otherwise browsers
   // keep a stale index.html pointing at a deleted JS file, which renders a
-  // 100% white page). Hashed JS/CSS are cached hard (immutable) BUT
-  // we add a version query to force cache busting.
+  // 100% white page). Hashed JS/CSS are cached hard (immutable).
   app.use((req, res, next) => {
     const safePath = (req.path || "/").split("?")[0];
     const filePath = path.join(distPath, safePath === "/" ? "index.html" : safePath);
@@ -318,23 +374,38 @@ async function startServer() {
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
       res.setHeader("Surrogate-Control", "no-store");
+      // Tell Cloudflare/any CDN in front to never cache the HTML.
+      res.setHeader("CDN-Cache-Control", "no-store");
       res.setHeader("Clear-Site-Data", "\"cache\"");
     } else if (isHashedAsset) {
-      // Use the ETag from file stats to force cache validation
-      const stats = fs.statSync(filePath);
-      const eTag = `W/${stats.size}-${stats.mtime.getTime()}`;
-      res.setHeader("ETag", eTag);
-      // Public cache with short max-age and force revalidation
-      res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
+      // Hashed assets are content-addressed and never change → cache forever.
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     }
     next();
   });
 
-  // Serve static frontend assets in both dev and production
+  // SPA root — serve the dynamically-generated, always-correct index.html.
+  // This MUST run before the static middleware so a literal dist/index.html on
+  // disk is never served (that file goes stale when the asset hash changes).
+  app.get("/", (req, res) => {
+    res.setHeader("Content-Type", "text/html");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.send(renderIndexHtml());
+  });
+
+  // Serve static frontend assets in both dev and production. Strips the ?v= cache
+  // query we append to asset URLs so the real file on disk is found. Skips "/"
+  // (handled by the dynamic HTML route above) and any .html path.
   app.use((req, res, next) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
-    const safePath = (req.path || "/").split("?")[0];
-    const filePath = path.join(distPath, safePath === "/" ? "index.html" : safePath);
+    const rawPath = (req.path || "/").split("?")[0];
+    if (rawPath === "/" || rawPath.endsWith(".html")) return next();
+    let safePath = rawPath.replace(/\?v=.*$/, "");
+    const filePath = path.join(distPath, safePath);
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = path.extname(filePath);
       const contentType = ext === ".js" ? "application/javascript" :
@@ -353,12 +424,16 @@ async function startServer() {
     }
   });
 
-  // SPA fallback — all non-API routes serve index.html with no-cache headers
+  // SPA fallback — all non-API routes serve the generated index.html (no-cache).
   app.get("*", (req, res) => {
+    if ((req.path || "").startsWith("/api/")) return next();
+    res.setHeader("Content-Type", "text/html");
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
-    res.sendFile(path.join(distPath, "index.html"));
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.send(renderIndexHtml());
   });
 
   app.listen(PORT, "0.0.0.0", () => {
