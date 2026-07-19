@@ -82,6 +82,8 @@ services:
     plan: starter
     region: oregon
     branch: main
+    # Force Blueprint reconciliation / redeploy so the latest main (white-page fix) ships.
+    # autoDeploy: true
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /api/health
